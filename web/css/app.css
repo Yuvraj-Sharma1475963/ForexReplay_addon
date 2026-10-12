@@ -440,6 +440,12 @@ button.primary {
 /* ---------- backtests dialog ---------- */
 #backtests-dialog { width: min(940px, calc(100vw - 32px)); }
 .backtest-table { margin-top: 10px; }
+.backtest-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; color: var(--muted); }
+.backtest-filters label { display: flex; align-items: center; gap: 6px; }
+.backtest-filters select, .backtest-filters input {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; font: inherit;
+}
+.backtest-filters input { width: 180px; }
 .backtest-table td { vertical-align: middle; }
 .backtest-table .nowrap { white-space: nowrap; }
 .backtest-table .actions { white-space: nowrap; text-align: right; }

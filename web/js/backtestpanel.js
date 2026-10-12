@@ -12,6 +12,7 @@ import { formatDateTime } from "./time.js";
 
 export const DEFAULT_JOURNAL = "manual_backtests";
 const KEY_JOURNAL = "forexreplay.journal";
+const KEY_FILTER = "forexreplay.backtests.filter"; // the journal the list shows ("" = all)
 const SAVE_DELAY_MS = 1500;
 const MAX_NAME = 80;
 
@@ -54,6 +55,12 @@ export class Backtests {
       event.target.value = this.journal;
     });
     this.el("backtest-close").addEventListener("click", () => dialog.close());
+    this.list = []; // the saved backtests as last read
+    this.el("backtest-filter").addEventListener("change", (event) => {
+      try { localStorage.setItem(KEY_FILTER, event.target.value); } catch { /* private mode: not kept */ }
+      this.render();
+    });
+    this.el("backtest-search").addEventListener("input", () => this.render());
     this.el("backtest-rows").addEventListener("click", (event) => this.handleRowClick(event));
     this.el("backtest-rows").addEventListener("keydown", (event) => {
       const input = event.target.closest("input.rename");
@@ -200,9 +207,30 @@ export class Backtests {
       this.say(`Could not read the saved backtests: ${err.message}`, "bad");
       return;
     }
+    this.list = list;
+    this.render();
+  }
+
+  /** The list, narrowed to one journal and to names containing the search words. */
+  render() {
+    const rows = this.el("backtest-rows");
+    const list = this.list;
+    const counts = new Map();
+    for (const b of list) counts.set(b.journal, (counts.get(b.journal) || 0) + 1);
+    const journals = [...counts.keys()].sort((a, b) => a.localeCompare(b));
+    let wanted = "";
+    try { wanted = localStorage.getItem(KEY_FILTER) || ""; } catch { /* private mode */ }
+    if (!counts.has(wanted)) wanted = ""; // that journal has no backtests any more
+    this.el("backtest-filter").innerHTML = `<option value="">All journals (${list.length})</option>` +
+      journals.map((j) => `<option value="${escapeHtml(j)}"${j === wanted ? " selected" : ""}>${escapeHtml(j)} (${counts.get(j)})</option>`).join("");
+    const words = this.el("backtest-search").value.toLowerCase().split(/\s+/).filter(Boolean);
+    const shown = list.filter((b) => (!wanted || b.journal === wanted) &&
+      words.every((w) => String(b.name || b.id).toLowerCase().includes(w)));
+    this.el("backtest-count").textContent = shown.length === list.length ? "" : `${shown.length} of ${list.length} shown`;
     rows.innerHTML = list.length === 0
       ? '<tr><td colspan="7" class="muted">No saved backtests yet. Start a replay and place a trade or draw something.</td></tr>'
-      : list.map((b) => this.row(b)).join("");
+      : shown.length === 0 ? '<tr><td colspan="7" class="muted">No backtest matches. Choose "All journals" or clear the search.</td></tr>'
+        : shown.map((b) => this.row(b)).join("");
   }
 
   row(b) {

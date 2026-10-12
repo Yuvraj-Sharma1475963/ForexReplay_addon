@@ -350,6 +350,11 @@
     <p class="muted" id="backtests-about">Each replay with a trade or a drawing is saved as you go, with its trades, its drawings and where it got to.
       Resume rebuilds it by repeating every action on the same candles, then carries on live from there.
       Closed trades are also added to the journal (<code>strategies/&lt;journal&gt;/trades.csv</code>).</p>
+    <div class="backtest-filters">
+      <label>Journal <select id="backtest-filter" aria-label="Show the backtests of one journal"></select></label>
+      <input id="backtest-search" type="search" placeholder="Search names" aria-label="Search backtest names" autocomplete="off">
+      <span class="muted" id="backtest-count"></span>
+    </div>
     <table class="grid backtest-table">
       <thead><tr><th>Name</th><th>Journal</th><th>Reached (IST)</th><th class="num">Trades</th><th class="num">Result</th><th>Saved</th><th></th></tr></thead>
       <tbody id="backtest-rows"></tbody>
