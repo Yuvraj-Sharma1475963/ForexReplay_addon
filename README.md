@@ -26,6 +26,7 @@ I built it to test my own session-based trading ideas honestly, with no hindsigh
 **Drawing and analysis**
 - Trendline, ray, horizontal line and ray, vertical line, rectangle, Fibonacci with the OTE zone (0.618 to 0.79) and your own levels and extensions, long/short position tool, text notes. Drawings have colours, line styles, a magnet to candle prices, undo, and TradingView-style Alt shortcuts.
 - Indicators: SMA, EMA, daily VWAP, RSI, ATR and ADR (with today's ADR levels), worked out only from revealed candles.
+- Smart Money Concepts: internal and swing order blocks and fair value gaps, each with its own switch, ported from [Smart Money Concepts by LuxAlgo](https://www.tradingview.com/script/CnB3fSph-Smart-Money-Concepts-SMC-LuxAlgo/). `web/js/smc.js` is licensed [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) like the original (non-commercial); see [decision 0017](docs/decisions/0017-smart-money-concepts.md).
 
 **Backtests, journal and analytics**
 - Every replay is a backtest, saved as you go and resumable later. It is saved as the actions you took and rebuilt by replaying them, then checked trade by trade against the save.

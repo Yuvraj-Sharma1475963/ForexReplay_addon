@@ -6,6 +6,7 @@
 // ever sees shifted times.
 
 import { cleanIndicators, IndicatorEngine } from "./indicators.js";
+import { BEARISH, cleanSmc, smcActive, SmcEngine } from "./smc.js";
 import { rgb, sessionsBetween } from "./sessions.js";
 import { formatDate, formatDateTime, IST_OFFSET_SECONDS } from "./time.js";
 import { indexAtOrBefore, timeframe as timeframeInfo } from "./timeframes.js";
@@ -159,6 +160,72 @@ class TradeMarkers {
   }
 }
 
+/**
+ * Order blocks and fair value gaps (smc.js), drawn behind the candles with the primitive hook.
+ * Colours are those of LuxAlgo's script: internal order blocks without a border, swing ones with one,
+ * an order block reaching to the right edge until price mitigates it, a gap split at its middle.
+ */
+const SMC_COLOURS = {
+  internalBull: "rgba(49, 121, 245, 0.2)", internalBear: "rgba(247, 124, 128, 0.2)",
+  swingBull: "rgba(24, 72, 204, 0.2)", swingBear: "rgba(178, 40, 51, 0.2)",
+  fvgBull: "rgba(0, 255, 104, 0.3)", fvgBear: "rgba(255, 0, 8, 0.3)",
+};
+
+class SmcLayer {
+  constructor(view) {
+    this.view = view;
+    this.result = null; // { internalObs, swingObs, fvgs } from SmcEngine
+    const draw = (target) => target.useMediaCoordinateSpace(({ context, mediaSize }) => this.paint(context, mediaSize));
+    this.views = [{ zOrder: () => "bottom", renderer: () => ({ draw }) }];
+  }
+
+  attached({ requestUpdate }) { this.requestUpdate = requestUpdate; }
+  detached() { this.requestUpdate = null; }
+  updateAllViews() {}
+  paneViews() { return this.views; }
+
+  set(result) {
+    this.result = result;
+    if (this.requestUpdate) this.requestUpdate();
+  }
+
+  paint(ctx, size) {
+    const { candles, chart, series } = this.view;
+    const r = this.result;
+    if (!r || !candles || candles.length === 0) return;
+    const scale = chart.timeScale();
+    const range = scale.getVisibleLogicalRange();
+    if (!range) return;
+    const half = scale.options().barSpacing / 2;
+    const y = (points) => series.priceToCoordinate(candles.price(points));
+    const box = (left, right, a, b, fill, stroke) => {
+      if (right < range.from - 1 || left > range.to + 1) return;
+      const x0 = scale.logicalToCoordinate(left), ya = y(a), yb = y(b);
+      if (x0 === null || ya === null || yb === null) return;
+      const x1 = right === Infinity ? size.width : scale.logicalToCoordinate(right) + half;
+      const top = Math.min(ya, yb), height = Math.max(1, Math.abs(ya - yb));
+      ctx.fillStyle = fill;
+      ctx.fillRect(x0 - half, top, x1 - (x0 - half), height);
+      if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.strokeRect(x0 - half + 0.5, top + 0.5, x1 - (x0 - half) - 1, height - 1); }
+    };
+    ctx.save();
+    for (const g of r.fvgs) {
+      const colour = g.bias === BEARISH ? SMC_COLOURS.fvgBear : SMC_COLOURS.fvgBull;
+      const mid = (g.top + g.bottom) / 2;
+      box(g.left, g.right, g.top, mid, colour, colour); // two boxes, as the script draws them
+      box(g.left, g.right, mid, g.bottom, colour, colour);
+    }
+    for (const ob of r.internalObs) {
+      box(ob.index, Infinity, ob.high, ob.low, ob.bias === BEARISH ? SMC_COLOURS.internalBear : SMC_COLOURS.internalBull, null);
+    }
+    for (const ob of r.swingObs) {
+      const colour = ob.bias === BEARISH ? SMC_COLOURS.swingBear : SMC_COLOURS.swingBull;
+      box(ob.index, Infinity, ob.high, ob.low, colour, colour);
+    }
+    ctx.restore();
+  }
+}
+
 export class ChartView {
   /**
    * @param {HTMLElement} container  element the chart fills
@@ -250,6 +317,10 @@ export class ChartView {
 
     this.sessions = new SessionBands(this);
     this.series.attachPrimitive(this.sessions);
+    this.smcSettings = cleanSmc(null);
+    this.smcEngine = new SmcEngine(); // works out only what a replay step changed
+    this.smc = new SmcLayer(this); // over the session bands, behind the candles
+    this.series.attachPrimitive(this.smc);
 
     this.chart.subscribeCrosshairMove((param) => this.handleCrosshair(param));
     this.chart.subscribeClick((param) => {
@@ -432,6 +503,18 @@ export class ChartView {
     this.onHover(this.barInfo(this.candles.length - 1)); // the legend shows the new set straight away
   }
 
+  /** Which Smart Money Concepts parts to show (see smc.js). */
+  setSmc(settings) {
+    this.smcSettings = cleanSmc(settings);
+    if (this.candles) this.drawSmc();
+  }
+
+  /** Order blocks and gaps from the candles on screen; with `from`, only from that candle on is worked out again. */
+  drawSmc(from = null) {
+    if (!smcActive(this.smcSettings)) { this.smc.set(null); return; }
+    this.smc.set(this.smcEngine.compute(this.candles, this.smcSettings, from));
+  }
+
   get pipPoints() { return 10 ** (this.digits - 4); } // EURUSD: 10 points to a pip
 
   indicatorPoint(line, i) {
@@ -448,6 +531,7 @@ export class ChartView {
    * are sent to the chart (a replay step); otherwise every point (new candles or new settings).
    */
   drawIndicators(from = null, to = null) {
+    this.drawSmc(from);
     let lines = this.indicatorEngine.compute(this.candles, this.indicatorSettings, from);
     // ADR levels are for intraday charts: on D1 a day is one candle, so they say nothing (lines and legend alike).
     if (this.timeframe === "D1") lines = lines.filter((l) => l.id !== "adrHigh" && l.id !== "adrLow");

@@ -387,6 +387,27 @@
           <label class="check inline-check"><input type="checkbox" data-levels="adr"> show today's ADR levels</label>
           (today's low + ADR and high &minus; ADR, as the day develops; not on D1)</td></tr>
     </tbody></table>
+    <h3 class="dialog-sub">Smart Money Concepts</h3>
+    <p class="muted small">Order blocks and fair value gaps, ported from <a href="https://www.tradingview.com/script/CnB3fSph-Smart-Money-Concepts-SMC-LuxAlgo/" target="_blank" rel="noopener">Smart Money Concepts by LuxAlgo</a>
+      (<a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>, non-commercial).
+      A block appears on the candle that breaks structure and goes when price mitigates it; a gap goes when price fills it.</p>
+    <table class="grid indicator-table"><tbody>
+      <tr><td><label class="check"><input type="checkbox" data-smc="internalOb"> <i class="swatch box" style="background:rgba(49,121,245,0.6)"></i> Internal order blocks</label></td>
+        <td><label>Show <input type="number" data-smc-count="internalOb" min="1" max="20" step="1"></label></td>
+        <td class="muted">from the internal structure (5-candle pivots), the latest ones not yet mitigated</td></tr>
+      <tr><td><label class="check"><input type="checkbox" data-smc="swingOb"> <i class="swatch box" style="background:rgba(24,72,204,0.8)"></i> Swing order blocks</label></td>
+        <td><label>Show <input type="number" data-smc-count="swingOb" min="1" max="20" step="1"></label></td>
+        <td class="muted">from the swing structure, pivots of <input type="number" data-smc-length min="10" max="500" step="1"> candles (known that many candles later)</td></tr>
+      <tr><td><label class="check"><input type="checkbox" data-smc="fvg"> <i class="swatch box" style="background:rgba(0,255,104,0.6)"></i> Fair value gaps</label></td>
+        <td><label>Extend <input type="number" data-smc-extend min="0" max="500" step="1"></label></td>
+        <td class="muted">on the chart's timeframe, extended that many candles.
+          <label class="check inline-check"><input type="checkbox" data-smc-auto> auto threshold</label> (skip gaps from small candles)</td></tr>
+      <tr><td>Mitigation</td>
+        <td colspan="2"><select data-smc-mitigation><option value="highlow">High/Low: a wick through the block</option><option value="close">Close: a close through the block</option></select></td></tr>
+      <tr><td>Order block filter</td>
+        <td colspan="2"><select data-smc-filter><option value="atr">ATR (200)</option><option value="range">Cumulative mean range (for little data)</option></select>
+          <span class="muted">a candle twice as long as this is not used as an order block</span></td></tr>
+    </tbody></table>
     <div class="dialog-actions"><span class="spacer"></span>
       <button type="button" class="plain bordered" id="indicators-close">Close</button></div>
   </dialog>

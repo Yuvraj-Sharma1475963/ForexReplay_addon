@@ -13,6 +13,7 @@ import { TradeNotes } from "./tradenotes.js";
 import { ChartView } from "./chart.js";
 import { DrawingLayer } from "./drawinglayer.js";
 import { cleanIndicators, STORAGE_KEY as KEY_INDICATORS } from "./indicators.js";
+import { cleanSmc, smcActive, STORAGE_KEY as KEY_SMC } from "./smc.js";
 import { LayerGroup } from "./layergroup.js";
 import {
   cleanFibLevels, DrawingStore, FIB_LEVELS, fibLevelsOf, LINE_STYLES, loadSaved as loadSavedDrawings, moveHandle, PALETTE,
@@ -186,7 +187,9 @@ async function boot() {
     },
   });
   let indicators = cleanIndicators((() => { try { return JSON.parse(recall(KEY_INDICATORS, "null")); } catch { return null; } })());
+  let smc = cleanSmc((() => { try { return JSON.parse(recall(KEY_SMC, "null")); } catch { return null; } })());
   const chart = new ChartView($("chart"), chartOptions(mainPane));
+  chart.setSmc(smc);
   chart.setIndicators(indicators);
   mainPane.chart = chart;
 
@@ -682,6 +685,7 @@ async function boot() {
       if (!sidePane.chart) {
         sidePane.chart = new ChartView($("chart2"), chartOptions(sidePane));
         sidePane.chart.setSessionsVisible(sessionsOn);
+        sidePane.chart.setSmc(smc);
         sidePane.chart.setIndicators(indicators);
       }
       if (!sidePane.layer) sidePane.layer = addLayer(sidePane.chart);
@@ -706,7 +710,16 @@ async function boot() {
       const levels = indicatorsDialog.querySelector(`[data-levels="${key}"]`);
       if (levels) levels.checked = s.levels;
     }
-    indicatorsButton.classList.toggle("active", Object.values(indicators).some((s) => s.on));
+    const q = (selector) => indicatorsDialog.querySelector(selector);
+    for (const key of ["internalOb", "swingOb", "fvg"]) q(`[data-smc="${key}"]`).checked = smc[key].on;
+    q('[data-smc-count="internalOb"]').value = smc.internalOb.count;
+    q('[data-smc-count="swingOb"]').value = smc.swingOb.count;
+    q("[data-smc-length]").value = smc.swingOb.length;
+    q("[data-smc-extend]").value = smc.fvg.extend;
+    q("[data-smc-auto]").checked = smc.fvg.auto;
+    q("[data-smc-mitigation]").value = smc.mitigation;
+    q("[data-smc-filter]").value = smc.filter;
+    indicatorsButton.classList.toggle("active", Object.values(indicators).some((s) => s.on) || smcActive(smc));
   }
   function applyIndicators() {
     const raw = {};
@@ -723,7 +736,26 @@ async function boot() {
     for (const c of [chart, sidePane.chart]) if (c) c.setIndicators(indicators);
     renderIndicatorForm(); // a refused period snaps back to what is used
   }
-  indicatorsDialog.addEventListener("change", applyIndicators);
+  function applySmc() {
+    const q = (selector) => indicatorsDialog.querySelector(selector);
+    smc = cleanSmc({
+      internalOb: { on: q('[data-smc="internalOb"]').checked, count: q('[data-smc-count="internalOb"]').value },
+      swingOb: { on: q('[data-smc="swingOb"]').checked, count: q('[data-smc-count="swingOb"]').value, length: q("[data-smc-length]").value },
+      fvg: { on: q('[data-smc="fvg"]').checked, auto: q("[data-smc-auto]").checked, extend: q("[data-smc-extend]").value },
+      mitigation: q("[data-smc-mitigation]").value,
+      filter: q("[data-smc-filter]").value,
+    });
+    remember(KEY_SMC, JSON.stringify(smc));
+    for (const c of [chart, sidePane.chart]) if (c) c.setSmc(smc);
+  }
+  indicatorsDialog.addEventListener("change", (event) => {
+    if (event.target.closest("[data-smc], [data-smc-count], [data-smc-length], [data-smc-extend], [data-smc-auto], [data-smc-mitigation], [data-smc-filter]")) {
+      applySmc();
+      renderIndicatorForm(); // a refused number snaps back to what is used
+    } else {
+      applyIndicators();
+    }
+  });
   indicatorsButton.addEventListener("click", () => { renderIndicatorForm(); indicatorsDialog.showModal(); });
   $("indicators-close").addEventListener("click", () => indicatorsDialog.close());
   renderIndicatorForm();
