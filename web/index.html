@@ -114,6 +114,13 @@
         <button class="plain small" id="draw-to-ticket" title="Copy this entry, stop and target into the order ticket" hidden>Use in ticket</button>
         <button class="plain small" id="draw-delete" title="Delete this drawing (Delete key)">Delete</button>
       </div>
+      <div class="trades-bar" id="trades-bar" hidden>
+        <span id="trades-bar-text"></span>
+        <button class="plain small" id="trades-prev" title="Previous trade of this backtest">&#8249; Prev</button>
+        <button class="plain small" id="trades-next" title="Next trade of this backtest">Next &#8250;</button>
+        <button class="plain small" id="trades-analytics" title="The analytics of this backtest">Analytics</button>
+        <button class="plain small" id="trades-hide" title="Hide these trades" aria-label="Hide these trades">&#10005;</button>
+      </div>
       <div class="chart" id="chart"></div>
       <div class="pane-side" id="pane-side" hidden>
         <div class="pane-head">
@@ -171,7 +178,7 @@
         <div class="block">
           <h2>Trades <span class="muted" id="an-trades-note"></span></h2>
           <div class="table-scroll"><table class="grid trades-table">
-            <thead><tr><th>#</th><th>Side</th><th>Entry (server time)</th><th class="num">Result</th><th class="num">$</th><th>Exit</th><th>Tags</th><th>Note</th><th>Pictures</th></tr></thead>
+            <thead><tr><th>#</th><th>Side</th><th>Entry (server time)</th><th class="num">Result</th><th class="num">$</th><th>Exit</th><th>Tags</th><th>Note</th><th>Pictures</th><th>Chart</th></tr></thead>
             <tbody id="an-trades"></tbody>
           </table></div>
         </div>

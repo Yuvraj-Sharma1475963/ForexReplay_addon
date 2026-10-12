@@ -24,8 +24,9 @@ export class Backtests {
    *   collect()        { trading, drawings, m5, clock, manifest, timeframe } for a save
    *   onResume(journal, id)  rebuilds and opens a saved backtest; returns its list of problems
    *   onAnalytics(journal, id)  opens the analytics page on that backtest alone
+   *   onChart(journal, id)  draws its trades on the chart; resolves to an error text, or "" when shown
    */
-  constructor({ dialog, status, collect, onResume, onAnalytics, store }) {
+  constructor({ dialog, status, collect, onResume, onAnalytics, onChart, store }) {
     this.store = store; // files on disk (desktop app) or this browser (online): see store.js
     if (store.kind === "browser") {
       dialog.querySelector("#backtests-about").textContent = "Online, each replay with a trade or a drawing is saved in this browser as you go, " +
@@ -37,6 +38,7 @@ export class Backtests {
     this.collect = collect;
     this.onResume = onResume;
     this.onAnalytics = onAnalytics || (() => {});
+    this.onChart = onChart || (async () => "");
     this.current = null; // { id, name, journal, created, startTime } of the run on screen
     this.everSaved = false;
     this.drawingsTouched = false;
@@ -255,6 +257,7 @@ export class Backtests {
       <td class="nowrap muted">${b.saved ? new Date(b.saved).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : ""}</td>
       <td class="actions">
         <button class="plain small" data-analytics="${key}" title="Statistics, balance, calendar and trades of this backtest alone">Analytics</button>
+        <button class="plain small" data-chart="${key}" title="Show this backtest's trades on the chart as long/short boxes">Chart</button>
         <button class="plain bordered small" data-resume="${key}"${running ? " disabled" : ""}>Resume</button>
         <button class="plain small" data-delete="${key}"${running ? " disabled" : ""}>Delete</button>
       </td></tr>`;
@@ -269,6 +272,11 @@ export class Backtests {
       await this.finishRename(button.closest("td").querySelector("input.rename"));
     } else if (button.dataset.renameCancel) {
       await this.refresh();
+    } else if (button.dataset.chart) {
+      const [journal, id] = button.dataset.chart.split("/");
+      const problem = await this.onChart(journal, id);
+      if (problem) this.say(problem, "bad");
+      else this.dialog.close();
     } else if (button.dataset.analytics) {
       const [journal, id] = button.dataset.analytics.split("/");
       this.dialog.close();

@@ -435,6 +435,16 @@ button.primary {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 .draw-bar[hidden] { display: none; }
+.trades-bar {
+  position: absolute; z-index: 5; top: 34px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px; max-width: calc(100% - 140px);
+  background: var(--panel); border: 1px solid var(--blue); border-radius: 6px; padding: 4px 6px 4px 10px;
+  font-size: 12px; font-variant-numeric: tabular-nums; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+.trades-bar[hidden] { display: none; }
+.trades-bar #trades-bar-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.trades-bar button { border: 1px solid var(--border); }
+.trades-bar button:hover { border-color: var(--blue); color: #fff; }
 .draw-bar button:hover { border-color: var(--blue); color: #fff; }
 
 /* ---------- backtests dialog ---------- */

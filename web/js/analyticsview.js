@@ -39,6 +39,11 @@ export class AnalyticsView {
     this.filters = { run: "", side: "", session: "", tag: "" };
     this.backtests = [];
     this.pendingRun = null; // a backtest to show on its own once its journal is loaded (focusRun)
+    this.onShowTrade = null; // (journal, runId, tradeId) => void: set by main.js to draw a trade on the chart
+    this.el("an-trades").addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-show-trade]");
+      if (button && this.onShowTrade) this.onShowTrade(this.journal, button.dataset.run, button.dataset.showTrade);
+    });
     this.el("an-journal").addEventListener("change", (event) => {
       remember(KEY_JOURNAL, event.target.value);
       this.loadJournal(event.target.value);
@@ -444,13 +449,15 @@ export class AnalyticsView {
   renderTrades(trades) {
     const shown = trades.slice(-300).reverse();
     this.el("an-trades-note").textContent = trades.length > shown.length ? `Latest ${shown.length} of ${trades.length}.` : "";
+    const saved = new Set(this.backtests.filter((b) => b.journal === this.journal).map((b) => b.id)); // runs whose backtest still exists
     this.el("an-trades").innerHTML = shown.map((t) => {
       const shots = (t.row.screenshots || "").split(";").map((s) => s.trim()).filter(Boolean);
       const links = !this.store.screenshots ? "" : shots.map((name, i) => `<a href="${this.store.screenshotUrl(this.journal, name)}" target="_blank" rel="noopener">${i + 1}</a>`).join(" ");
       return `<tr><td>#${escapeHtml(t.row.trade_id)}</td><td>${escapeHtml(t.side)}</td><td class="nowrap">${escapeHtml(t.row.entry_time)}</td>` +
         `<td class="num ${tone(t.r)}">${r2(t.r)}</td><td class="num">${Number.isFinite(t.money) ? usd(t.money) : ""}</td>` +
         `<td>${escapeHtml(t.exitReason.toLowerCase().replace("_", " "))}</td><td>${escapeHtml(t.tags.join(", "))}</td>` +
-        `<td class="note">${escapeHtml(t.row.note || "")}</td><td>${links}</td></tr>`;
+        `<td class="note">${escapeHtml(t.row.note || "")}</td><td>${links}</td>` +
+        `<td>${saved.has(t.run) ? `<button class="plain small" data-show-trade="${escapeHtml(t.row.trade_id)}" data-run="${escapeHtml(t.run)}" title="Show this trade on the chart">&#9656;</button>` : ""}</td></tr>`;
     }).join("");
   }
 }

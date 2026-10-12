@@ -688,6 +688,7 @@ async function boot() {
         sidePane.chart = new ChartView($("chart2"), chartOptions(sidePane));
         sidePane.chart.setSessionsVisible(sessionsOn);
         sidePane.chart.setSmc(smc);
+        if (review) sidePane.chart.setTradeBoxes(review.boxes, review.k);
         sidePane.chart.setIndicators(indicators);
       }
       if (!sidePane.layer) sidePane.layer = addLayer(sidePane.chart);
@@ -798,7 +799,9 @@ async function boot() {
     ui.clock.classList.toggle("history", behind > 0);
   }
 
+  let review = null; // { journal, id, name, boxes, k } while a backtest's trades are on the chart (see below)
   clock.onChange((_, reason) => {
+    if (reason === "start" && review) hideReview(); // never alongside a replay (see showBacktestTrades)
     if (reason === "start" && !resuming) { // a new replay is a new run: no trades carried over
       trading.reset();
       shotsTaken.clear();
@@ -969,6 +972,58 @@ async function boot() {
       analytics.focusRun(journal, id);
       document.querySelector('[data-view="analytics"]').click();
     },
+    onChart: (journal, id) => showBacktestTrades(journal, id),
+  });
+
+  // ------------------------------------------------------------ a backtest's trades on the chart
+  // Outside a replay only: during one, a past backtest's trades could show prices the clock has hidden.
+  const sideLabel = (long) => (long ? "Long" : "Short");
+  function tradeBox(t) {
+    const long = t.side === Side.BUY;
+    const stop = t.initialStop ?? t.stopLoss ?? (long ? t.entryPrice - t.plannedRisk : t.entryPrice + t.plannedRisk);
+    const r = Number.isFinite(t.resultR) ? `${t.resultR >= 0 ? "+" : ""}${t.resultR.toFixed(2)}R` : "";
+    const money = Number.isFinite(t.money) ? ` · ${formatSignedMoney(t.money)}` : "";
+    return {
+      id: t.id, entryTime: t.entryTime, exitTime: t.exitTime, entry: t.entryPrice, exit: t.exitPrice,
+      stop, target: t.takeProfit ?? null, long, resultR: t.resultR,
+      label: `#${t.id} ${sideLabel(long)} ${Number(t.lots).toFixed(2)} lots · ${r}${money}`,
+    };
+  }
+  function drawReview() {
+    for (const p of panes()) p.chart.setTradeBoxes(review ? review.boxes : [], review ? review.k : -1);
+    $("trades-bar").hidden = !review;
+    if (!review) return;
+    const b = review.boxes[review.k];
+    $("trades-bar-text").textContent = `Trades of "${review.name}" · ${review.k + 1} of ${review.boxes.length} · ${b.label}`;
+    $("trades-prev").disabled = review.k === 0;
+    $("trades-next").disabled = review.k === review.boxes.length - 1;
+  }
+  function focusTrade(k) {
+    review.k = Math.max(0, Math.min(review.boxes.length - 1, k));
+    drawReview();
+    for (const p of panes()) p.chart.showTrade(review.boxes[review.k]);
+  }
+  /** Draw a saved backtest's closed trades. Resolves to a reason it could not, or "". */
+  async function showBacktestTrades(journal, id, tradeId = null) {
+    if (clock.active) return "Leave the replay first (the ✕ next to the replay buttons): during a replay, another backtest's trades could show prices still hidden.";
+    let saved;
+    try { saved = await store.getBacktest(journal, id); } catch (err) { return `Could not read that backtest: ${err.message}`; }
+    const closed = (saved.trades || []).filter((t) => t.status === Status.CLOSED && t.entryTime !== null && t.exitTime !== null)
+      .sort((a, b) => a.entryTime - b.entryTime);
+    if (closed.length === 0) return `"${saved.name}" has no closed trades to show.`;
+    review = { journal, id, name: saved.name, boxes: closed.map(tradeBox), k: 0 };
+    document.querySelector('[data-view="chart"]').click();
+    const k = tradeId === null ? 0 : review.boxes.findIndex((b) => String(b.id) === String(tradeId));
+    focusTrade(Math.max(0, k));
+    return "";
+  }
+  function hideReview() { review = null; drawReview(); }
+  $("trades-prev").addEventListener("click", () => focusTrade(review.k - 1));
+  $("trades-next").addEventListener("click", () => focusTrade(review.k + 1));
+  $("trades-hide").addEventListener("click", hideReview);
+  $("trades-analytics").addEventListener("click", () => {
+    analytics.focusRun(review.journal, review.id);
+    document.querySelector('[data-view="analytics"]').click();
   });
   $("backtests-open").addEventListener("click", () => { clock.pause(); backtests.open(); });
   window.addEventListener("pagehide", () => backtests.saveOnUnload());
@@ -1070,6 +1125,10 @@ async function boot() {
   // ------------------------------------------------------------ tabs
   const tabViews = { chart: $("chart-view"), analytics: $("analytics-view"), data: $("data-view") };
   const analytics = new AnalyticsView($("analytics-view"), store);
+  analytics.onShowTrade = async (journal, runId, tradeId) => {
+    const problem = await showBacktestTrades(journal, runId, tradeId);
+    if (problem) analytics.message(problem);
+  };
   document.querySelectorAll("[data-view]").forEach((tab) => {
     tab.addEventListener("click", () => {
       const name = tab.dataset.view;

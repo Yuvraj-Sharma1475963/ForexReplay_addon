@@ -160,6 +160,83 @@ class TradeMarkers {
   }
 }
 
+/**
+ * The trades of a saved backtest, drawn like TradingView's long/short position tool: a red zone from
+ * the entry to the first stop, a green zone from the entry to the target, from the entry candle to the
+ * exit candle, a dashed line from the entry to the exit, and a label (side, lots, R, dollars).
+ * Shown only outside a replay (main.js hides them when one starts), so they never give away the future.
+ */
+class TradeBoxes {
+  constructor(view) {
+    this.view = view;
+    this.boxes = []; // [{ entryTime, exitTime, entry, stop, target, exit, long, resultR, label }]
+    this.focus = -1; // the box the bar above the chart is on
+    const draw = (target) => target.useMediaCoordinateSpace(({ context }) => this.paint(context));
+    this.views = [{ zOrder: () => "bottom", renderer: () => ({ draw }) }];
+  }
+
+  attached({ requestUpdate }) { this.requestUpdate = requestUpdate; }
+  detached() { this.requestUpdate = null; }
+  updateAllViews() {}
+  paneViews() { return this.views; }
+
+  set(boxes, focus = -1) {
+    this.boxes = boxes;
+    this.focus = focus;
+    if (this.requestUpdate) this.requestUpdate();
+  }
+
+  paint(ctx) {
+    const { candles, chart, series } = this.view;
+    if (!candles || candles.length === 0 || this.boxes.length === 0) return;
+    const scale = chart.timeScale();
+    const range = scale.getVisibleLogicalRange();
+    if (!range) return;
+    const half = scale.options().barSpacing / 2;
+    const y = (points) => series.priceToCoordinate(candles.price(points));
+    ctx.save();
+    ctx.font = '11px -apple-system, "Segoe UI", Roboto, sans-serif';
+    this.boxes.forEach((b, k) => {
+      const i0 = indexAtOrBefore(candles, b.entryTime);
+      const i1 = Math.max(i0, indexAtOrBefore(candles, b.exitTime));
+      if (i0 < 0 || i1 < range.from - 1 || i0 > range.to + 1) return;
+      const xa = scale.logicalToCoordinate(i0), xb = scale.logicalToCoordinate(i1);
+      const yE = y(b.entry), yS = y(b.stop), yX = y(b.exit);
+      if (xa === null || xb === null || yE === null || yS === null || yX === null) return;
+      const yT = b.target === null ? null : y(b.target);
+      const x0 = xa - half, x1 = xb + half, focused = k === this.focus;
+      const zone = (yy, colour) => {
+        ctx.fillStyle = `rgba(${colour}, ${focused ? 0.32 : 0.2})`;
+        ctx.fillRect(x0, Math.min(yE, yy), x1 - x0, Math.max(1, Math.abs(yy - yE)));
+        if (focused) { ctx.strokeStyle = `rgba(${colour}, 0.9)`; ctx.lineWidth = 1; ctx.strokeRect(x0 + 0.5, Math.min(yE, yy) + 0.5, x1 - x0 - 1, Math.abs(yy - yE)); }
+      };
+      zone(yS, "239, 83, 80");
+      if (yT !== null) zone(yT, "38, 166, 154");
+      ctx.setLineDash([]);
+      ctx.strokeStyle = "rgba(209, 212, 220, 0.85)";
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x0, Math.round(yE) + 0.5); ctx.lineTo(x1, Math.round(yE) + 0.5); ctx.stroke();
+      const won = b.resultR > 0.05, lost = b.resultR < -0.05;
+      const colour = won ? "#26a69a" : lost ? "#ef5350" : "#d1d4dc";
+      ctx.strokeStyle = colour;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.moveTo(xa, yE); ctx.lineTo(xb, yX); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = colour;
+      ctx.beginPath(); ctx.arc(xb, yX, 3.5, 0, Math.PI * 2); ctx.fill();
+      if (focused || x1 - x0 > 110) { // labels only where they fit, always on the trade being looked at
+        const top = Math.min(yE, yS, yT === null ? yE : yT);
+        const width = ctx.measureText(b.label).width + 10;
+        ctx.fillStyle = focused ? "rgba(30, 34, 45, 0.95)" : "rgba(30, 34, 45, 0.8)";
+        ctx.fillRect(x0, top - 18, width, 16);
+        ctx.fillStyle = colour;
+        ctx.fillText(b.label, x0 + 5, top - 6);
+      }
+    });
+    ctx.restore();
+  }
+}
+
 /** A dashed vertical line where "Go to" landed, so the start of the day is easy to find. */
 class JumpMark {
   constructor(view) {
@@ -362,6 +439,8 @@ export class ChartView {
     this.series.attachPrimitive(this.smc);
     this.jumpMark = new JumpMark(this);
     this.series.attachPrimitive(this.jumpMark);
+    this.tradeBoxes = new TradeBoxes(this);
+    this.series.attachPrimitive(this.tradeBoxes);
 
     this.chart.subscribeCrosshairMove((param) => this.handleCrosshair(param));
     this.chart.subscribeClick((param) => {
@@ -767,6 +846,22 @@ export class ChartView {
     const bars = this.visibleBarCount();
     const lead = Math.round(bars * 0.12);
     this.chart.timeScale().setVisibleLogicalRange({ from: i - lead, to: i - lead + bars });
+  }
+
+  /** Draw a saved backtest's trades (see TradeBoxes); `focus` is the index of the one to stand out. */
+  setTradeBoxes(boxes, focus = -1) {
+    this.tradeBoxes.set(boxes, focus);
+  }
+
+  /** Bring a trade box into view, centred, zooming out if the trade is wider than the screen. */
+  showTrade(box) {
+    if (!this.candles) return;
+    const i0 = Math.max(0, indexAtOrBefore(this.candles, box.entryTime));
+    const i1 = Math.max(i0, indexAtOrBefore(this.candles, box.exitTime));
+    const span = i1 - i0 + 1;
+    const bars = Math.max(this.visibleBarCount(), span + 30);
+    const from = i0 - Math.round((bars - span) / 2);
+    this.chart.timeScale().setVisibleLogicalRange({ from, to: from + bars });
   }
 
   goToLatest() {
