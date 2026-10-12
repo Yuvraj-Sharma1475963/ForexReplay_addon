@@ -446,6 +446,11 @@ button.primary {
 .backtest-table .bad { color: var(--down); }
 .backtest-table .tag { color: var(--muted); font-size: 11px; border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
 .backtest-table button.armed { color: var(--down); }
+.backtest-table .rename-button { opacity: 0.45; padding: 0 4px; }
+.backtest-table tr:hover .rename-button, .backtest-table .rename-button:focus { opacity: 1; }
+.backtest-table input.rename {
+  width: min(260px, 100%); background: var(--panel-2); color: var(--text); border: 1px solid var(--blue); border-radius: 4px; padding: 2px 6px; font: inherit;
+}
 .dialog .journal-field { margin-top: 0; }
 .dialog .journal-field input { width: 170px; }
 .dialog code { color: var(--text); }

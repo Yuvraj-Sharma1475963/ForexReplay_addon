@@ -13,6 +13,7 @@ import { formatDateTime } from "./time.js";
 export const DEFAULT_JOURNAL = "manual_backtests";
 const KEY_JOURNAL = "forexreplay.journal";
 const SAVE_DELAY_MS = 1500;
+const MAX_NAME = 80;
 
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 export class Backtests {
@@ -54,6 +55,12 @@ export class Backtests {
     });
     this.el("backtest-close").addEventListener("click", () => dialog.close());
     this.el("backtest-rows").addEventListener("click", (event) => this.handleRowClick(event));
+    this.el("backtest-rows").addEventListener("keydown", (event) => {
+      const input = event.target.closest("input.rename");
+      if (!input) return;
+      if (event.key === "Enter") { event.preventDefault(); this.finishRename(input); }
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); this.refresh(); } // cancel, keep the dialog open
+    });
     this.renderStatus();
   }
 
@@ -209,7 +216,8 @@ export class Backtests {
     const tone = (r.totalR || 0) >= 0 ? "up" : "down";
     const trades = `${r.closed || 0}` + (r.open || r.pending ? ` + ${(r.open || 0) + (r.pending || 0)} active` : "");
     return `<tr>
-      <td>${escapeHtml(b.name)}${running ? ' <span class="tag">on screen</span>' : ""}</td>
+      <td class="name-cell"><span class="bt-name">${escapeHtml(b.name)}</span>${running ? ' <span class="tag">on screen</span>' : ""}
+        <button class="plain small rename-button" data-rename="${key}" title="Rename this backtest" aria-label="Rename">&#9998;</button></td>
       <td>${escapeHtml(b.journal)}</td>
       <td class="nowrap">${formatDateTime(b.furthestTime)}</td>
       <td class="num">${trades}</td>
@@ -224,7 +232,13 @@ export class Backtests {
   async handleRowClick(event) {
     const button = event.target.closest("button");
     if (!button) return;
-    if (button.dataset.resume) {
+    if (button.dataset.rename) {
+      this.startRename(button);
+    } else if (button.dataset.renameSave) {
+      await this.finishRename(button.closest("td").querySelector("input.rename"));
+    } else if (button.dataset.renameCancel) {
+      await this.refresh();
+    } else if (button.dataset.resume) {
       const [journal, id] = button.dataset.resume.split("/");
       this.say("Rebuilding the run from its saved actions...");
       try {
@@ -252,5 +266,45 @@ export class Backtests {
       this.armedDelete = null;
       await this.refresh();
     }
+  }
+
+  // ----- renaming -----------------------------------------------------------
+  /** Swap the name for a box to type the new one in. */
+  startRename(button) {
+    const cell = button.closest("td");
+    const name = cell.querySelector(".bt-name").textContent;
+    cell.innerHTML = `<input class="rename" type="text" maxlength="${MAX_NAME}" value="${escapeHtml(name)}" data-key="${escapeHtml(button.dataset.rename)}" aria-label="New name">
+      <button class="plain bordered small" data-rename-save="1">Save</button> <button class="plain small" data-rename-cancel="1">Cancel</button>`;
+    const input = cell.querySelector("input");
+    input.focus();
+    input.select();
+  }
+
+  async finishRename(input) {
+    const name = input.value.replace(/\s+/g, " ").trim().slice(0, MAX_NAME);
+    if (!name) { this.say("A name cannot be empty.", "bad"); input.focus(); return; }
+    const [journal, id] = input.dataset.key.split("/");
+    try {
+      await this.rename(journal, id, name);
+      this.say(`Renamed to "${name}".`, "ok");
+    } catch (err) {
+      this.say(`Could not rename: ${err.message}`, "bad");
+    }
+    await this.refresh();
+  }
+
+  /**
+   * Give a saved backtest a name of your own. The name is only a label: the id, the journal and the
+   * journal rows stay as they are, so the analytics page shows the new name at once.
+   */
+  async rename(journal, id, name) {
+    if (this.current && this.current.id === id && this.current.journal === journal) {
+      this.current.name = name; // the run on screen: the next save carries the new name
+      if (!(await this.save())) throw new Error("the save failed");
+      return;
+    }
+    const data = await this.store.getBacktest(journal, id);
+    data.name = name;
+    await this.store.putBacktest(data);
   }
 }
