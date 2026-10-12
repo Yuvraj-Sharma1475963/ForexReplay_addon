@@ -965,6 +965,10 @@ async function boot() {
     status: $("status-backtest"),
     collect: () => ({ trading, drawings, notes, m5, clock, manifest, timeframe: current }),
     onResume: resumeBacktest,
+    onAnalytics: (journal, id) => {
+      analytics.focusRun(journal, id);
+      document.querySelector('[data-view="analytics"]').click();
+    },
   });
   $("backtests-open").addEventListener("click", () => { clock.pause(); backtests.open(); });
   window.addEventListener("pagehide", () => backtests.saveOnUnload());

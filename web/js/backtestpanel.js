@@ -23,8 +23,9 @@ export class Backtests {
    *   dialog, status   the dialog element and the status-bar element
    *   collect()        { trading, drawings, m5, clock, manifest, timeframe } for a save
    *   onResume(journal, id)  rebuilds and opens a saved backtest; returns its list of problems
+   *   onAnalytics(journal, id)  opens the analytics page on that backtest alone
    */
-  constructor({ dialog, status, collect, onResume, store }) {
+  constructor({ dialog, status, collect, onResume, onAnalytics, store }) {
     this.store = store; // files on disk (desktop app) or this browser (online): see store.js
     if (store.kind === "browser") {
       dialog.querySelector("#backtests-about").textContent = "Online, each replay with a trade or a drawing is saved in this browser as you go, " +
@@ -35,6 +36,7 @@ export class Backtests {
     this.status = status;
     this.collect = collect;
     this.onResume = onResume;
+    this.onAnalytics = onAnalytics || (() => {});
     this.current = null; // { id, name, journal, created, startTime } of the run on screen
     this.everSaved = false;
     this.drawingsTouched = false;
@@ -252,6 +254,7 @@ export class Backtests {
       <td class="num ${tone}">${r.challenge ? `<span class="tag ${r.challenge.toLowerCase()}" title="Prop-firm challenge">${r.challenge === "RUNNING" ? "challenge" : r.challenge}</span> ` : ""}${(r.totalR || 0) >= 0 ? "+" : ""}${(r.totalR || 0).toFixed(2)}R · ${formatSignedMoney(r.money || 0)}</td>
       <td class="nowrap muted">${b.saved ? new Date(b.saved).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : ""}</td>
       <td class="actions">
+        <button class="plain small" data-analytics="${key}" title="Statistics, balance, calendar and trades of this backtest alone">Analytics</button>
         <button class="plain bordered small" data-resume="${key}"${running ? " disabled" : ""}>Resume</button>
         <button class="plain small" data-delete="${key}"${running ? " disabled" : ""}>Delete</button>
       </td></tr>`;
@@ -266,6 +269,10 @@ export class Backtests {
       await this.finishRename(button.closest("td").querySelector("input.rename"));
     } else if (button.dataset.renameCancel) {
       await this.refresh();
+    } else if (button.dataset.analytics) {
+      const [journal, id] = button.dataset.analytics.split("/");
+      this.dialog.close();
+      this.onAnalytics(journal, id);
     } else if (button.dataset.resume) {
       const [journal, id] = button.dataset.resume.split("/");
       this.say("Rebuilding the run from its saved actions...");

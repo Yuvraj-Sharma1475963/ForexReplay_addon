@@ -38,6 +38,7 @@ export class AnalyticsView {
     this.trades = [];
     this.filters = { run: "", side: "", session: "", tag: "" };
     this.backtests = [];
+    this.pendingRun = null; // a backtest to show on its own once its journal is loaded (focusRun)
     this.el("an-journal").addEventListener("change", (event) => {
       remember(KEY_JOURNAL, event.target.value);
       this.loadJournal(event.target.value);
@@ -60,6 +61,12 @@ export class AnalyticsView {
       for (const key of Object.keys(this.filters)) { this.filters[key] = ""; this.el(`an-${key}`).value = ""; }
       this.render();
     });
+  }
+
+  /** Open next on one backtest alone: its journal, that run, no other filter. Call before open(). */
+  focusRun(journal, runId) {
+    remember(KEY_JOURNAL, journal);
+    this.pendingRun = runId;
   }
 
   /** Called when the tab opens: refresh the list of journals and the chosen journal. */
@@ -99,12 +106,20 @@ export class AnalyticsView {
     }
     // Keep a filter only if its value still exists in this journal.
     const choices = filterChoices(this.trades);
+    const focus = this.pendingRun;
+    this.pendingRun = null;
+    if (focus !== null) for (const key of Object.keys(this.filters)) this.filters[key] = key === "run" ? focus : "";
     for (const key of Object.keys(this.filters)) {
       if (!choices[key].includes(this.filters[key])) this.filters[key] = "";
-      const label = { run: "All runs", side: "Both sides", session: "All sessions", tag: "All tags" }[key];
+      const label = { run: "All backtests", side: "Both sides", session: "All sessions", tag: "All tags" }[key];
       const names = key === "run" ? this.runNames() : {};
       this.el(`an-${key}`).innerHTML = `<option value="">${label}</option>` + choices[key]
         .map((v) => `<option value="${escapeHtml(v)}"${v === this.filters[key] ? " selected" : ""}>${escapeHtml(names[v] || v)}</option>`).join("");
+    }
+    if (focus !== null && this.filters.run !== focus) {
+      const b = this.backtests.find((x) => x.id === focus);
+      this.message(`"${b ? b.name : focus}" has no closed trades yet, so there is nothing to analyse. Pick another backtest above.`);
+      return;
     }
     this.render();
   }
