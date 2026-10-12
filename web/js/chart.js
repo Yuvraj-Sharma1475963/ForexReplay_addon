@@ -160,6 +160,45 @@ class TradeMarkers {
   }
 }
 
+/** A dashed vertical line where "Go to" landed, so the start of the day is easy to find. */
+class JumpMark {
+  constructor(view) {
+    this.view = view;
+    this.time = null; // UTC seconds, or null for none
+    const draw = (target) => target.useMediaCoordinateSpace(({ context, mediaSize }) => this.paint(context, mediaSize));
+    this.views = [{ zOrder: () => "top", renderer: () => ({ draw }) }];
+  }
+
+  attached({ requestUpdate }) { this.requestUpdate = requestUpdate; }
+  detached() { this.requestUpdate = null; }
+  updateAllViews() {}
+  paneViews() { return this.views; }
+
+  set(time) {
+    this.time = time;
+    if (this.requestUpdate) this.requestUpdate();
+  }
+
+  paint(ctx, size) {
+    const candles = this.view.candles;
+    if (this.time === null || !candles || candles.length === 0) return;
+    const i = indexAtOrBefore(candles, this.time);
+    if (i < 0) return;
+    const scale = this.view.chart.timeScale();
+    const x = scale.logicalToCoordinate(i);
+    if (x === null) return;
+    const left = Math.round(x - scale.options().barSpacing / 2) + 0.5; // the candle's left edge: where the day starts
+    ctx.save();
+    ctx.strokeStyle = "rgba(41, 98, 255, 0.8)";
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(left, 0);
+    ctx.lineTo(left, size.height);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 /**
  * Order blocks and fair value gaps (smc.js), drawn behind the candles with the primitive hook.
  * Colours are those of LuxAlgo's script: internal order blocks without a border, swing ones with one,
@@ -321,6 +360,8 @@ export class ChartView {
     this.smcEngine = new SmcEngine(); // works out only what a replay step changed
     this.smc = new SmcLayer(this); // over the session bands, behind the candles
     this.series.attachPrimitive(this.smc);
+    this.jumpMark = new JumpMark(this);
+    this.series.attachPrimitive(this.jumpMark);
 
     this.chart.subscribeCrosshairMove((param) => this.handleCrosshair(param));
     this.chart.subscribeClick((param) => {
@@ -715,7 +756,21 @@ export class ChartView {
     return this.candles.time[i];
   }
 
+  /**
+   * Show the candle at a moment (UTC seconds), or the candle that contains it, a little in from the
+   * left edge, keeping the zoom: the day or hour that starts there reads from left to right.
+   */
+  showFrom(utcSeconds) {
+    if (!this.candles) return;
+    this.jumpMark.set(utcSeconds);
+    const i = Math.max(0, indexAtOrBefore(this.candles, utcSeconds));
+    const bars = this.visibleBarCount();
+    const lead = Math.round(bars * 0.12);
+    this.chart.timeScale().setVisibleLogicalRange({ from: i - lead, to: i - lead + bars });
+  }
+
   goToLatest() {
+    this.jumpMark.set(null);
     if (this.candles) this.showEndingAt(this.candles.length - 1, this.visibleBarCount());
   }
 }

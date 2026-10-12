@@ -62,7 +62,11 @@ button:disabled { color: #50535e; cursor: not-allowed; }
 .group button.active { background: var(--panel-2); color: #fff; }
 #timeframes button.active { color: var(--blue); }
 .divider { width: 1px; height: 22px; background: var(--border); }
-.goto { color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.goto { color: var(--muted); display: flex; align-items: center; gap: 4px; }
+.goto-label { margin-right: 2px; }
+.goto button.goto-step { padding: 2px 7px; font-size: 16px; line-height: 1; }
+.goto input[type="time"] { width: 92px; }
+.goto input::-webkit-calendar-picker-indicator { filter: invert(0.75); cursor: pointer; } /* visible on the dark bar */
 .goto input {
   background: var(--panel-2);
   color: var(--text);
@@ -233,8 +237,8 @@ body { overflow: hidden; }
 @media (max-width: 860px) {
   .topbar { gap: 6px; padding: 0 8px; }
   .topbar .divider { display: none; }
-  .goto { font-size: 0; gap: 0; }       /* hide the words "Go to", keep the date box */
-  .goto input { font-size: 13px; width: 150px; }
+  .goto-label { display: none; }        /* hide the words "Go to", keep the boxes */
+  .goto input[type="time"] { width: 84px; }
   .brand span { display: none; }
   .brand::after { content: "R"; color: var(--blue); }
 }

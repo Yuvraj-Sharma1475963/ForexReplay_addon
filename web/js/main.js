@@ -26,7 +26,7 @@ import { OrderType } from "./broker.js";
 import { ReplayClock, SPEEDS } from "./replay.js";
 import { loadSavedSessions, renderSessionKey, setupSessionSettings } from "./sessionsettings.js";
 import { formatDateTime, IST_OFFSET_SECONDS } from "./time.js";
-import { TIMEFRAMES, TimeframeView } from "./timeframes.js";
+import { serverDate, TIMEFRAMES, TimeframeView } from "./timeframes.js";
 import { InvalidOrder, Side, Status, Trading } from "./trading.js";
 import { TradingPanel } from "./tradingpanel.js";
 
@@ -80,9 +80,11 @@ function parseIndiaInput(value) {
   return Date.UTC(y, mo - 1, d, h, mi) / 1000 - IST_OFFSET_SECONDS;
 }
 
-/** UTC seconds -> value for a datetime-local input, in India time. */
-function toIndiaInput(utcSeconds) {
-  return new Date((utcSeconds + IST_OFFSET_SECONDS) * 1000).toISOString().slice(0, 16);
+/** A trading day number (days since 1970 on the broker clock) as "2026-09-10", and back. */
+const dayToInput = (day) => new Date(day * 86400000).toISOString().slice(0, 10);
+function inputToDay(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / 86400000 : null;
 }
 
 async function boot() {
@@ -995,13 +997,69 @@ async function boot() {
   $("sessions-settings").addEventListener("click", openSessionSettings);
 
   // ------------------------------------------------------------ go to date / latest
-  const goto = $("goto");
-  goto.min = toIndiaInput(manifest.first);
-  goto.max = toIndiaInput(manifest.last);
-  goto.addEventListener("change", () => {
-    const when = parseIndiaInput(goto.value);
-    if (when !== null) for (const p of panes()) p.chart.goTo(when);
-  });
+  // A day on its own means the start of that trading day: its first candle after 17:00 New York
+  // (the broker's midnight, about 02:30 or 03:30 in India), the same days the ADR, the challenge and
+  // the P&L calendar use. With a time it is that moment in India time. The ‹ › buttons step a trading day.
+  const gotoDate = $("goto-date"), gotoTime = $("goto-time");
+  gotoDate.min = dayToInput(serverDate(manifest.first));
+  gotoDate.max = dayToInput(serverDate(manifest.last));
+  /** The index of the first M5 candle on or after trading day `day` (m5.length if none). */
+  const firstCandleOfDay = (day) => {
+    let lo = 0, hi = m5.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (serverDate(m5.time[mid]) < day) lo = mid + 1; else hi = mid; }
+    return lo;
+  };
+  const lastRevealed = () => m5.time[Math.max(1, clock.furthest) - 1]; // during a replay, nothing after it
+  let shown = { date: "", time: "" }; // what the boxes said at the last jump that worked
+  function jumpTo(utc) {
+    if (utc > lastRevealed()) {
+      gotoDate.value = shown.date; // the boxes go back to what is on screen
+      gotoTime.value = shown.time;
+      panel.say(clock.active
+        ? `That is after where this replay has got to (${formatDateTime(lastRevealed())}). Play on to reach it, or leave the replay.`
+        : "That is after the last candle in the data.", "bad");
+      return false;
+    }
+    for (const p of panes()) p.chart.showFrom(Math.max(utc, manifest.first));
+    shown = { date: gotoDate.value, time: gotoTime.value };
+    return true;
+  }
+  function goToDay(day) {
+    const i = firstCandleOfDay(day);
+    if (i >= m5.length) { panel.say("There are no candles on or after that day.", "bad"); return; }
+    const found = serverDate(m5.time[i]);
+    if (!jumpTo(m5.time[i])) return;
+    gotoDate.value = dayToInput(found);
+    shown.date = gotoDate.value;
+    panel.say(found === day ? `Start of ${formatDateTime(m5.time[i])} IST (the trading day opens at 17:00 New York).`
+      : `No candles on ${dayToInput(day)} (weekend or holiday): showing the next trading day, from ${formatDateTime(m5.time[i])} IST.`, "ok");
+  }
+  function go() {
+    const day = inputToDay(gotoDate.value);
+    if (day === null) return;
+    if (!gotoTime.value) { goToDay(day); return; }
+    const when = parseIndiaInput(`${gotoDate.value}T${gotoTime.value}`);
+    if (when !== null && jumpTo(when)) panel.say(`${formatDateTime(when)} IST.`, "ok");
+  }
+  /** The next (+1) or previous (-1) trading day that has candles, from the day in the box or the last revealed candle. */
+  function stepDay(dir) {
+    const from = inputToDay(gotoDate.value) ?? serverDate(lastRevealed());
+    gotoTime.value = "";
+    if (dir > 0) { // the next day with candles, so a Friday steps to Monday without a weekend message
+      const i = firstCandleOfDay(from + 1);
+      if (i >= m5.length) { panel.say("That is the last day in the data.", "bad"); return; }
+      goToDay(serverDate(m5.time[i]));
+      return;
+    }
+    const i = firstCandleOfDay(from) - 1; // the last candle before that day
+    if (i < 0) { panel.say("That is the first day in the data.", "bad"); return; }
+    goToDay(serverDate(m5.time[i]));
+  }
+  gotoDate.addEventListener("change", go);
+  gotoTime.addEventListener("change", go);
+  for (const input of [gotoDate, gotoTime]) input.addEventListener("keydown", (event) => { if (event.key === "Enter") go(); });
+  $("goto-prev").addEventListener("click", () => stepDay(-1));
+  $("goto-next").addEventListener("click", () => stepDay(1));
   $("latest").addEventListener("click", allToLatest);
   setLayout(layoutTwo); // after the sessions are set up: the side chart copies their visibility
 

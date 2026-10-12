@@ -22,9 +22,13 @@
       <button disabled data-tf="D1" title="1 day">D1</button>
     </div>
     <div class="divider"></div>
-    <label class="goto" title="Jump to a date and time (India time)">
-      Go to <input type="datetime-local" id="goto">
-    </label>
+    <div class="goto" title="Pick a day to jump to the start of that trading day; add a time (India) to jump to that moment">
+      <span class="goto-label">Go to</span>
+      <button class="plain goto-step" id="goto-prev" title="Previous trading day" aria-label="Previous trading day">&#8249;</button>
+      <input type="date" id="goto-date" aria-label="Day to go to">
+      <input type="time" id="goto-time" aria-label="Time to go to, India time (optional)" title="Optional, India time. Leave empty for the start of the trading day">
+      <button class="plain goto-step" id="goto-next" title="Next trading day" aria-label="Next trading day">&#8250;</button>
+    </div>
     <button class="plain" id="latest" title="Jump to the newest candle on the chart">Latest &#8677;</button>
     <button class="plain toggle" id="sessions-toggle" title="Show or hide session shading (M5 to H1)">Sessions</button>
     <button class="plain" id="sessions-settings" title="Session settings: names, timezones, hours, colours" aria-label="Session settings">&#9881;</button>
