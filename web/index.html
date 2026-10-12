@@ -29,14 +29,14 @@
       <input type="time" id="goto-time" aria-label="Time to go to, India time (optional)" title="Optional, India time. Leave empty for the start of the trading day">
       <button class="plain goto-step" id="goto-next" title="Next trading day" aria-label="Next trading day">&#8250;</button>
     </div>
-    <button class="plain" id="latest" title="Jump to the newest candle on the chart">Latest &#8677;</button>
-    <button class="plain toggle" id="sessions-toggle" title="Show or hide session shading (M5 to H1)">Sessions</button>
-    <button class="plain" id="sessions-settings" title="Session settings: names, timezones, hours, colours" aria-label="Session settings">&#9881;</button>
-    <button class="plain toggle" id="indicators-open" title="Indicators: SMA, EMA, VWAP and RSI">Indicators</button>
-    <button class="plain toggle" id="layout-toggle" title="Two charts side by side, on the same replay clock">&#9707; 2 charts</button>
+    <button class="plain" id="latest" title="Jump to the newest candle on the chart"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h11M12 8l4 4-4 4M19 6v12"/></svg><span>Latest</span></button>
+    <button class="plain toggle" id="sessions-toggle" title="Show or hide session shading (M5 to H1)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="5" height="14" rx="1"/><rect x="9.5" y="5" width="5" height="14" rx="1"/><rect x="16" y="5" width="5" height="14" rx="1"/></svg><span>Sessions</span></button>
+    <button class="plain icon-only" id="sessions-settings" title="Session settings: names, timezones, hours, colours" aria-label="Session settings"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg></button>
+    <button class="plain toggle" id="indicators-open" title="Indicators: SMA, EMA, VWAP, RSI, ATR, ADR, order blocks and fair value gaps"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17c3-6 5-9 8-5s5 1 8-6"/><path d="M4 20h16"/></svg><span>Indicators</span></button>
+    <button class="plain toggle" id="layout-toggle" title="Two charts side by side, on the same replay clock"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 5v14"/></svg><span>2 charts</span></button>
     <div class="spacer"></div>
     <div class="clock" id="clock"></div>
-    <button class="plain replay-start" id="replay-toggle" title="Start a replay: click here, then click the candle to start from">&#9198; Replay</button>
+    <button class="plain replay-start" id="replay-toggle" title="Start a replay: click here, then click the candle to start from"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6v12M20 6l-9 6 9 6z"/></svg><span>Replay</span></button>
     <div class="group replay" id="replay-controls" hidden>
       <button id="replay-back" title="Step back one candle (Left arrow)">&#9664;&#10072;</button>
       <button id="replay-play" title="Play (Space)">&#9654;</button>
@@ -45,7 +45,7 @@
       <button id="replay-live" title="Return to where the replay had got to (End)" hidden>Live &#8677;</button>
       <button id="replay-exit" title="Save this backtest and leave the replay">&#10005;</button>
     </div>
-    <button class="plain" id="backtests-open" title="Saved backtests: resume one where it stopped, or delete it">Backtests</button>
+    <button class="plain" id="backtests-open" title="Saved backtests: rename, filter, analytics, chart, resume or delete"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg><span>Backtests</span></button>
     <div class="divider"></div>
     <div class="group tabs" aria-label="View">
       <button class="active" data-view="chart">Chart</button>

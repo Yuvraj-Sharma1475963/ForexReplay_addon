@@ -678,3 +678,103 @@ table.calendar .count { color: var(--muted); font-size: 11.5px; }
 .adr-line { display: flex; align-items: center; gap: 5px; margin-top: 2px; }
 .adr-line .plain.small { margin-left: auto; }
 .journal .check[hidden] { display: none; }
+
+/* =====================================================================================
+   TradingView look (after v2.0.5): black panels on thin gutters with rounded corners,
+   flat icon buttons that light up on hover, blue for what is on, TradingView-style
+   dialogs, inputs and scrollbars. Last in the file so it wins over the older rules above.
+   ===================================================================================== */
+:root { --gutter: #2a2a2a; --hover: #2e2e2e; --dialog: #1e1e1e; --radius: 6px; }
+body { background: var(--gutter); gap: 4px; }
+.topbar, .tools, .stage, .panel, .statusbar { background: var(--bg); border: 0; }
+.tools, .stage, .panel { border-radius: var(--radius); }
+.stage { overflow: hidden; }
+.statusbar { font-size: 12px; }
+
+/* top bar */
+.topbar { gap: 4px; padding-left: 10px; padding-right: 10px; }
+.brand { margin-right: 6px; }
+.pill#symbol {
+  display: inline-flex; align-items: center; gap: 6px; background: transparent; padding: 5px 8px; border-radius: 4px; cursor: default;
+}
+.pill#symbol::before {
+  content: ""; width: 15px; height: 15px; background: var(--muted);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='M16 16l4.5 4.5'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='M16 16l4.5 4.5'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.pill#symbol:hover { background: var(--hover); }
+.divider { height: 24px; margin: 0 4px; background: var(--gutter); }
+button.plain, .group button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 4px; color: var(--text); }
+button.plain:hover, .group button:hover:not(:disabled) { background: var(--hover); }
+button.plain svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+button.plain.icon-only { padding: 6px; }
+button.toggle.active { color: var(--blue); background: transparent; }
+button.toggle.active:hover { background: var(--hover); }
+#timeframes button { font-weight: 500; padding: 6px 7px; }
+#timeframes button.active { color: var(--blue); background: transparent; }
+.group.tabs button.active { background: var(--hover); color: #fff; }
+button.replay-start { border: 0; }
+button.replay-start.active { color: var(--blue); }
+.group.replay { background: transparent; border: 1px solid var(--gutter); }
+.goto input { background: transparent; border-color: var(--gutter); }
+.goto input:hover { border-color: #4a4a4a; }
+@media (max-width: 1600px) { /* a narrower bar keeps the icons and drops some words (the tooltips still say them) */
+  #sessions-toggle span, #layout-toggle span, #latest span, .goto-label { display: none; }
+}
+@media (max-width: 1200px) {
+  #indicators-open span, #backtests-open span, #replay-toggle span { display: none; }
+  .brand span { display: none; }
+  .brand::after { content: "R"; color: var(--blue); }
+}
+
+/* left drawing toolbar */
+.tools { padding: 6px 0; gap: 2px; }
+.tools button { width: 36px; height: 36px; padding: 7px; border-radius: 4px; color: var(--text); }
+.tools button:hover:not(:disabled) { background: var(--hover); }
+.tools button.active { background: transparent; color: var(--blue); }
+.tools button.active:hover { background: var(--hover); }
+.tools svg { stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.tools button[data-tool="vline"], .tools button[data-tool="fib"], .tools button[data-tool="short"] { margin-bottom: 6px; position: relative; }
+.tools button[data-tool="vline"]::after, .tools button[data-tool="fib"]::after, .tools button[data-tool="short"]::after {
+  content: ""; position: absolute; left: 8px; right: 8px; bottom: -4px; height: 1px; background: var(--gutter);
+}
+
+/* right panel and cards */
+.panel { padding: 12px 14px; }
+
+/* overlays on the chart: legend, bars, hints */
+.draw-bar, .trades-bar { background: var(--dialog); border-color: var(--gutter); border-radius: var(--radius); }
+.trades-bar { border-color: var(--blue); }
+.draw-bar button, .trades-bar button { border-radius: 4px; }
+
+/* dialogs, menus and inputs */
+.dialog {
+  background: var(--dialog); border: 1px solid var(--gutter); border-radius: 8px; padding: 20px 22px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+}
+.dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+.dialog h2 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
+.dialog table.grid th { color: var(--muted); font-weight: 500; }
+.dialog table.grid td, .dialog table.grid th { border-bottom-color: var(--gutter); }
+.dialog table.grid tbody tr:hover td { background: rgba(255, 255, 255, 0.03); }
+.field input, .dialog input[type="text"], .dialog input[type="time"], .dialog input[type="number"], .dialog input[type="search"], .dialog select,
+.an-filters select, .an-filters input, .backtest-filters select, .backtest-filters input, .indicator-table input[type="number"], .indicator-table select {
+  background: transparent; border: 1px solid var(--gutter); border-radius: var(--radius);
+}
+.field input:hover, .dialog input:hover, .dialog select:hover, .an-filters select:hover, .backtest-filters select:hover { border-color: #4a4a4a; }
+.field input:focus, .dialog input:focus, .dialog select:focus { outline: 0; border-color: var(--blue); }
+select option { background: var(--dialog); color: var(--text); }
+button.bordered { border-color: var(--gutter); }
+button.bordered:hover { border-color: #4a4a4a; }
+button.primary, .order-place { border-radius: var(--radius); }
+.segmented button { border-radius: var(--radius); }
+
+/* analytics: cards on black */
+.tile, .block { background: var(--panel); border-color: var(--gutter); border-radius: 8px; }
+
+/* thin dark scrollbars, as on TradingView */
+* { scrollbar-width: thin; scrollbar-color: #3a3a3a transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #4a4a4a; }
+::-webkit-scrollbar-track { background: transparent; }
