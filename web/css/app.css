@@ -1,13 +1,13 @@
 :root {
-  --bg: #131722;
-  --panel: #1e222d;
-  --panel-2: #2a2e39;
-  --border: #2a2e39;
-  --text: #d1d4dc;
-  --muted: #868993;
+  --bg: #0f0f0f;
+  --panel: #1a1a1a;
+  --panel-2: #262626;
+  --border: #2e2e2e;
+  --text: #dbdbdb;
+  --muted: #8c8c8c;
   --blue: #2962ff;
-  --up: #26a69a;
-  --down: #ef5350;
+  --up: #089981;
+  --down: #f23645;
   --warn: #f5a623;
   color-scheme: dark;
 }
@@ -58,7 +58,7 @@ body {
   cursor: pointer;
 }
 .group button:hover:not(:disabled), .tools button:hover:not(:disabled) { background: var(--panel-2); }
-button:disabled { color: #50535e; cursor: not-allowed; }
+button:disabled { color: #4a4a4a; cursor: not-allowed; }
 .group button.active { background: var(--panel-2); color: #fff; }
 #timeframes button.active { color: var(--blue); }
 .divider { width: 1px; height: 22px; background: var(--border); }
@@ -148,7 +148,7 @@ h2 { font-size: 13px; margin: 0 0 10px; color: var(--text); font-weight: 600; }
   z-index: 10;
   margin: 16px;
   border: 1px solid var(--down);
-  background: rgba(239, 83, 80, 0.1);
+  background: rgba(242, 54, 69, 0.1);
   padding: 10px 12px;
   border-radius: 6px;
   margin-bottom: 16px;
@@ -595,8 +595,8 @@ table.calendar { width: 100%; min-width: 640px; border-collapse: separate; borde
 table.calendar th { color: var(--muted); font-weight: 500; font-size: 12px; padding: 2px 0; }
 table.calendar td { vertical-align: top; height: 64px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; }
 table.calendar td.out { opacity: 0.45; }
-table.calendar td.win { background: rgba(38, 166, 154, 0.14); border-color: rgba(38, 166, 154, 0.35); }
-table.calendar td.loss { background: rgba(239, 83, 80, 0.14); border-color: rgba(239, 83, 80, 0.35); }
+table.calendar td.win { background: rgba(8, 153, 129, 0.14); border-color: rgba(8, 153, 129, 0.35); }
+table.calendar td.loss { background: rgba(242, 54, 69, 0.14); border-color: rgba(242, 54, 69, 0.35); }
 table.calendar td.week { background: var(--panel-2); }
 table.calendar .date { color: var(--muted); font-size: 12px; }
 table.calendar .amount { font-weight: 600; font-size: 13.5px; margin-top: 4px; }

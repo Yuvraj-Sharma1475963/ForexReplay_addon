@@ -196,7 +196,7 @@ async function boot() {
   mainPane.chart = chart;
 
   // ------------------------------------------------------------ trading
-  const UP = "#26a69a", DOWN = "#ef5350", PENDING = "#ffb74d", ENTRY = "#d1d4dc";
+  const UP = "#089981", DOWN = "#f23645", PENDING = "#ffb74d", ENTRY = "#dbdbdb";
   const trading = new Trading({
     m5, clock, pipPoints: manifest.pip_points, pointValue: pointValuePerLot(manifest.digits),
     settings: loadSettings(), challenge: loadChallengeRules(), onChange: () => refreshTrading(),

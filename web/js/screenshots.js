@@ -18,13 +18,13 @@ export function capture(charts, caption) {
   canvas.width = shots.reduce((w, s) => w + s.width, 0) + GAP * (shots.length - 1);
   canvas.height = Math.max(...shots.map((s) => s.height)) + STRIP;
   const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#1e222d";
+  ctx.fillStyle = "#1a1a1a";
   ctx.fillRect(0, 0, canvas.width, STRIP);
-  ctx.fillStyle = "#d1d4dc";
+  ctx.fillStyle = "#dbdbdb";
   ctx.font = '13px -apple-system, "Segoe UI", Roboto, sans-serif';
   ctx.textBaseline = "middle";
   ctx.fillText(caption, 10, STRIP / 2);
-  ctx.fillStyle = "#1e222d"; // the gap between charts shows as the strip colour
+  ctx.fillStyle = "#1a1a1a"; // the gap between charts shows as the strip colour
   ctx.fillRect(0, STRIP, canvas.width, canvas.height - STRIP);
   let x = 0;
   for (const shot of shots) {

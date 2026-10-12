@@ -25,15 +25,15 @@ const DASHES = { solid: [], dashed: [6, 4], dotted: [1.5, 3] };
 const STYLE = {
   line: { stroke: BLUE, width: 1.5 },
   text: { text: BLUE },
-  note: { text: "#d1d4dc" },
+  note: { text: "#dbdbdb" },
   textbox: { fill: "rgba(0, 0, 0, 0)" },
   guide: { stroke: "rgba(120, 123, 134, 0.8)", width: 1, dash: [4, 4] },
   level: { stroke: "rgba(120, 123, 134, 0.9)", width: 1 },
   ote: { stroke: "#f5a623", width: 1, fill: "rgba(245, 166, 35, 0.10)" },
   fill: { fill: "rgba(41, 98, 255, 0.12)" },
-  profit: { fill: "rgba(38, 166, 154, 0.22)", text: "#26a69a" },
-  loss: { fill: "rgba(239, 83, 80, 0.22)", text: "#ef5350" },
-  entry: { stroke: "#d1d4dc", width: 1, text: "#d1d4dc" },
+  profit: { fill: "rgba(8, 153, 129, 0.22)", text: "#089981" },
+  loss: { fill: "rgba(242, 54, 69, 0.22)", text: "#f23645" },
+  entry: { stroke: "#dbdbdb", width: 1, text: "#dbdbdb" },
   measure: { text: "#b2b5be" },
 };
 const FONT = '11px -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -459,7 +459,7 @@ export class DrawingLayer {
         for (const h of shape.handles) {
           ctx.beginPath();
           ctx.arc(h.x, h.y, 4.5, 0, Math.PI * 2);
-          ctx.fillStyle = "#131722";
+          ctx.fillStyle = "#0f0f0f";
           ctx.fill();
           ctx.strokeStyle = BLUE;
           ctx.lineWidth = 1.5;

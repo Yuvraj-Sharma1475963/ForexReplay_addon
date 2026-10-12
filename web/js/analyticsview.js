@@ -10,7 +10,7 @@ import {
   parseRows, propCheck,
 } from "./analytics.js";
 
-const UP = "#26a69a", DOWN = "#ef5350", LINE = "#2962ff", GRID = "#2a2e39", MUTED = "#868993";
+const UP = "#089981", DOWN = "#f23645", LINE = "#2962ff", GRID = "#2e2e2e", MUTED = "#8c8c8c";
 const KEY_JOURNAL = "forexreplay.analytics.journal";
 const KEY_RISK = "forexreplay.analytics.risk";
 
@@ -254,11 +254,11 @@ export class AnalyticsView {
       limit(target, UP, target === null ? "" : `Profit target ${axisMoney(target)}`) +
       `<path d="${area}" fill="${LINE}" fill-opacity="0.10"/>` +
       `<path d="${path}" fill="none" stroke="${LINE}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` +
-      `<circle cx="${X(n)}" cy="${Y(end)}" r="4" fill="${LINE}" stroke="#1e222d" stroke-width="2"/>` +
+      `<circle cx="${X(n)}" cy="${Y(end)}" r="4" fill="${LINE}" stroke="#1a1a1a" stroke-width="2"/>` +
       dateTicks.map((i) => `<text x="${X(i)}" y="${H - 6}" text-anchor="${i === 1 ? "start" : i === n ? "end" : "middle"}" class="axis">` +
         `${escapeHtml(dayLabel(curve[i - 1].trade.exitDay))}</text>`).join("") +
       `<line class="crosshair" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="${MUTED}" stroke-width="1" visibility="hidden"/>` +
-      `<circle class="hover-dot" r="4" fill="${LINE}" stroke="#1e222d" stroke-width="2" visibility="hidden"/>`;
+      `<circle class="hover-dot" r="4" fill="${LINE}" stroke="#1a1a1a" stroke-width="2" visibility="hidden"/>`;
     svg.onpointermove = (event) => {
       const box = svg.getBoundingClientRect();
       const x = ((event.clientX - box.left) / box.width) * W;
@@ -334,11 +334,11 @@ export class AnalyticsView {
       `<line x1="${L}" x2="${W - R}" y1="${Y(0)}" y2="${Y(0)}" stroke="${MUTED}" stroke-width="1"/>` +
       `<path d="${area}" fill="${LINE}" fill-opacity="0.10"/>` +
       `<path d="${path}" fill="none" stroke="${LINE}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` +
-      `<circle cx="${X(curve.length - 1)}" cy="${Y(last)}" r="4" fill="${LINE}" stroke="#1e222d" stroke-width="2"/>` +
+      `<circle cx="${X(curve.length - 1)}" cy="${Y(last)}" r="4" fill="${LINE}" stroke="#1a1a1a" stroke-width="2"/>` +
       `<text x="${Math.min(X(curve.length - 1), W - R)}" y="${Y(last) - 9}" text-anchor="end" class="label">${escapeHtml(r2(last))}</text>` +
       `<text x="${L}" y="${H - 6}" class="axis">trade 1</text><text x="${W - R}" y="${H - 6}" text-anchor="end" class="axis">trade ${trades.length}</text>` +
       `<line class="crosshair" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="${MUTED}" stroke-width="1" visibility="hidden"/>` +
-      `<circle class="hover-dot" r="4" fill="${LINE}" stroke="#1e222d" stroke-width="2" visibility="hidden"/>`;
+      `<circle class="hover-dot" r="4" fill="${LINE}" stroke="#1a1a1a" stroke-width="2" visibility="hidden"/>`;
     const tip = this.el("an-equity-tip");
     svg.onpointermove = (event) => {
       const box = svg.getBoundingClientRect();

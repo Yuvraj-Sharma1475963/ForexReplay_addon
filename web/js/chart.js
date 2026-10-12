@@ -12,21 +12,21 @@ import { formatDate, formatDateTime, IST_OFFSET_SECONDS } from "./time.js";
 import { indexAtOrBefore, timeframe as timeframeInfo } from "./timeframes.js";
 
 const COLOURS = {
-  background: "#131722",
+  background: "#0f0f0f",
   text: "#b2b5be",
-  grid: "#1f2330",
-  border: "#2a2e39",
-  up: "#26a69a",
-  down: "#ef5350",
-  upVolume: "rgba(38, 166, 154, 0.35)",
-  downVolume: "rgba(239, 83, 80, 0.35)",
+  grid: "#1c1c1c",
+  border: "#2e2e2e",
+  up: "#089981",
+  down: "#f23645",
+  upVolume: "rgba(8, 153, 129, 0.35)",
+  downVolume: "rgba(242, 54, 69, 0.35)",
   crosshair: "#758696",
 };
 
 // Indicator colours: checked for colour-blind separation and contrast on the chart background (day 13).
 export const INDICATOR_COLOURS = {
   sma: "#00a7b8", ema: "#9c4fd6", vwap: "#c27c0e", rsi: "#2962ff",
-  atr: "#00a7b8", adr: "#868993", adrHigh: "#868993", adrLow: "#868993", // ATR has a panel to itself; ADR levels are quiet grey
+  atr: "#00a7b8", adr: "#8c8c8c", adrHigh: "#8c8c8c", adrLow: "#8c8c8c", // ATR has a panel to itself; ADR levels are quiet grey
 };
 const SUB_PANES = ["rsi", "atr"]; // panels under the chart, in this order
 
@@ -217,7 +217,7 @@ class TradeBoxes {
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(x0, Math.round(yE) + 0.5); ctx.lineTo(x1, Math.round(yE) + 0.5); ctx.stroke();
       const won = b.resultR > 0.05, lost = b.resultR < -0.05;
-      const colour = won ? "#26a69a" : lost ? "#ef5350" : "#d1d4dc";
+      const colour = won ? "#089981" : lost ? "#f23645" : "#dbdbdb";
       ctx.strokeStyle = colour;
       ctx.setLineDash([4, 3]);
       ctx.beginPath(); ctx.moveTo(xa, yE); ctx.lineTo(xb, yX); ctx.stroke();
@@ -375,8 +375,8 @@ export class ChartView {
       grid: { vertLines: { color: COLOURS.grid }, horzLines: { color: COLOURS.grid } },
       crosshair: {
         mode: lib.CrosshairMode.Normal, // free crosshair like TradingView, not snapped to the close
-        vertLine: { color: COLOURS.crosshair, labelBackgroundColor: "#363a45" },
-        horzLine: { color: COLOURS.crosshair, labelBackgroundColor: "#363a45" },
+        vertLine: { color: COLOURS.crosshair, labelBackgroundColor: "#2e2e2e" },
+        horzLine: { color: COLOURS.crosshair, labelBackgroundColor: "#2e2e2e" },
       },
       rightPriceScale: { borderColor: COLOURS.border, scaleMargins: { top: 0.08, bottom: 0.22 } },
       timeScale: {
