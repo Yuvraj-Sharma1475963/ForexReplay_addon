@@ -39,6 +39,7 @@ export class AnalyticsView {
     this.filters = { run: "", side: "", session: "", tag: "" };
     this.backtests = [];
     this.pendingRun = null; // a backtest to show on its own once its journal is loaded (focusRun)
+    this.runOrder = []; // run ids, newest first (newestFirst)
     this.onShowTrade = null; // (journal, runId, tradeId) => void: set by main.js to draw a trade on the chart
     this.el("an-trades").addEventListener("click", (event) => {
       const button = event.target.closest("button[data-show-trade]");
@@ -114,6 +115,7 @@ export class AnalyticsView {
     const focus = this.pendingRun;
     this.pendingRun = null;
     if (focus !== null) for (const key of Object.keys(this.filters)) this.filters[key] = key === "run" ? focus : "";
+    choices.run = this.runOrder = this.newestFirst(choices.run);
     for (const key of Object.keys(this.filters)) {
       if (!choices[key].includes(this.filters[key])) this.filters[key] = "";
       const label = { run: "All backtests", side: "Both sides", session: "All sessions", tag: "All tags" }[key];
@@ -127,6 +129,22 @@ export class AnalyticsView {
       return;
     }
     this.render();
+  }
+
+  /**
+   * Run ids, the backtest worked on most recently first (its last save, as in the Backtests list).
+   * Runs whose backtest was deleted go last, the one whose trades were logged last first.
+   */
+  newestFirst(runs) {
+    const when = new Map(this.backtests.filter((b) => b.journal === this.journal).map((b) => [b.id, String(b.saved || b.created || "")]));
+    const logged = new Map();
+    this.trades.forEach((t, i) => logged.set(t.run, i));
+    return [...runs].sort((a, b) => {
+      const wa = when.get(a), wb = when.get(b);
+      if (wa && wb) return wb.localeCompare(wa);
+      if (wa || wb) return wa ? -1 : 1;
+      return (logged.get(b) ?? -1) - (logged.get(a) ?? -1);
+    });
   }
 
   /** Backtest names for run ids, so the filter says "EURUSD from Thu 13 Aug…" rather than "bt-2026…". */
@@ -431,6 +449,7 @@ export class AnalyticsView {
     ];
     this.el("an-breakdowns").innerHTML = groups.map(([title, by]) => {
       const table = breakdown(trades, by);
+      if (title === "Run") table.sort((a, b) => this.runOrder.indexOf(a.group) - this.runOrder.indexOf(b.group)); // newest first, as in the filter
       const most = Math.max(...table.map((row) => Math.abs(row.total_r)), 0.0001);
       return `<div class="block"><h2>By ${title.toLowerCase()}</h2><table class="grid">` +
         `<thead><tr><th>${title}</th><th class="num">Trades</th><th class="num">Win rate</th><th class="num">Avg</th><th class="num">Total R</th><th></th></tr></thead><tbody>` +
