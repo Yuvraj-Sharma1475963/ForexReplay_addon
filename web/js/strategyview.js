@@ -6,7 +6,8 @@
 // Discarded backtests are left out of the numbers unless asked for; archived ones count.
 
 import { breakdown, computeStats, parseRows } from "./analytics.js";
-import { cleanLibrary, cleanMeta, periodText, statusLabel } from "./backtestmeta.js";
+import { cleanLibrary, cleanMeta, gaps, joinSpans, overlaps, periodText, spanOf, statusLabel } from "./backtestmeta.js";
+import { formatDate } from "./time.js";
 
 const escapeHtml = (text) => String(text ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const r2 = (v) => (Number.isFinite(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}R` : "–");
@@ -25,7 +26,8 @@ export class StrategyView {
   /**
    * @param {HTMLElement} root  the Strategies section
    * @param {object} store  store.js
-   * @param {object} actions  { onAnalytics(journal, id), onChart(journal, id) -> Promise<problem text> }
+   * @param {object} actions  { onAnalytics(journal, id), onChart(journal, id) -> Promise<problem text>,
+   *   range: { first, last } UTC seconds of the market data, for the coverage timeline }
    */
   constructor(root, store, actions) {
     this.root = root;
@@ -178,10 +180,56 @@ export class StrategyView {
       </div>
       <div class="block" id="st-compare-block"><div class="block-head"><h2>Compare versions</h2>
         <span>${this.versionSelect(0, ids)} vs ${this.versionSelect(1, ids)}</span></div><div id="st-compare"></div></div>
+      ${this.coverage(versions)}
       <div class="block"><h2>Backtests</h2>
         <div class="table-scroll"><table class="grid"><thead><tr><th>Name</th><th>Version</th><th>Status</th><th>Period</th><th class="num">Trades</th><th class="num">Result</th><th></th></tr></thead>
         <tbody>${runRows || '<tr><td colspan="7" class="muted">No backtests with this strategy yet.</td></tr>'}</tbody></table></div></div>`;
     this.renderCompare();
+  }
+
+  /**
+   * Which dates this strategy has been tested on, over the whole market data: a lane per version,
+   * one for dates tested more than once (where hindsight creeps in) and the untested gaps.
+   */
+  coverage(versions) {
+    const range = this.actions.range;
+    if (!range || !(range.last > range.first)) return "";
+    const { first, last } = range;
+    const x = (t) => Math.max(0, Math.min(100, ((t - first) / (last - first)) * 100));
+    const bar = (span, cls, title) => {
+      const left = x(span[0]), width = Math.max(0.35, x(span[1]) - left);
+      return `<div class="cv-bar ${cls}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%" title="${escapeHtml(title)}"></div>`;
+    };
+    const live = versions.flatMap((v) => v.backtests).filter((b) => cleanMeta(b).status !== "discarded");
+    const spans = live.map(spanOf);
+    const tested = joinSpans(spans);
+    const twice = overlaps(spans);
+    const holes = gaps(spans, first, last, 7);
+    const days = (list) => Math.round(list.reduce((n, [a, b]) => n + (b - a), 0) / 86400);
+    const total = Math.round((last - first) / 86400);
+    const months = [];
+    const d = new Date(first * 1000);
+    for (let m = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)); m.getTime() / 1000 < last; m.setUTCMonth(m.getUTCMonth() + 1)) {
+      const t = m.getTime() / 1000;
+      months.push(`<span class="cv-tick" style="left:${x(t).toFixed(3)}%">${m.toLocaleString("en-GB", { month: "short", timeZone: "UTC" })}${m.getUTCMonth() === 0 ? ` ${m.getUTCFullYear()}` : ""}</span>`);
+    }
+    const lane = (label, inner, cls = "") => `<div class="cv-lane ${cls}"><span class="cv-label">${escapeHtml(label)}</span><div class="cv-track">${inner}</div></div>`;
+    const lanes = versions.filter((v) => v.backtests.length).map((v) => lane(v.version, v.backtests.map((b) => {
+      const m = cleanMeta(b);
+      return bar(spanOf(b), `st-${m.status}`, `${b.name} · ${periodText(b)} · ${statusLabel(m.status)}`);
+    }).join("")));
+    const span = ([a, b]) => `${formatDate(a)} → ${formatDate(b)}`;
+    return `<div class="block"><div class="block-head"><h2>Coverage</h2>
+        <span class="muted">${days(tested)} of ${total} days tested (${total ? Math.round((days(tested) / total) * 100) : 0}%) · tested more than once: ${days(twice)} days · untested gaps of a week or more: ${holes.length}</span></div>
+      <div class="coverage">
+        ${lanes.join("") || lane("–", "", "empty")}
+        ${lane("twice+", twice.map((s) => bar(s, "cv-overlap", `tested more than once: ${span(s)}`)).join(""), "cv-overlap-lane")}
+        ${lane("gaps", holes.map((s) => bar(s, "cv-gap", `not tested: ${span(s)}`)).join(""), "cv-gap-lane")}
+        <div class="cv-lane cv-axis"><span class="cv-label"></span><div class="cv-track">${months.join("")}</div></div>
+      </div>
+      <p class="muted small">Each bar is a backtest, from its start to the furthest candle it reached (green done, amber testing, red discarded; discarded ones are not counted).
+        Testing the same weeks again lets memory leak in: pick an untested gap for the next run.${holes.length ? ` Untested: ${holes.slice(0, 6).map(span).join("; ")}${holes.length > 6 ? "…" : ""}.` : ""}</p>
+    </div>`;
   }
 
   versionSelect(side, ids) {

@@ -832,6 +832,21 @@ button.primary, .order-place { border-radius: var(--radius); }
 .strategies .status.testing { color: var(--warn); }
 .strategies td.actions { white-space: nowrap; text-align: right; }
 
+/* coverage timeline on a strategy's page */
+.coverage { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 4px; }
+.cv-lane { display: flex; align-items: center; gap: 8px; }
+.cv-label { width: 56px; flex-shrink: 0; color: var(--muted); font-size: 11.5px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-track { position: relative; flex: 1; height: 16px; background: rgba(255, 255, 255, 0.03); border-radius: 3px; }
+.cv-axis .cv-track { background: transparent; height: 14px; }
+.cv-bar { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; }
+.cv-bar.st-done { background: var(--up); }
+.cv-bar.st-testing { background: var(--warn); }
+.cv-bar.st-discarded { background: var(--down); opacity: 0.45; }
+.cv-bar.cv-overlap { background: var(--warn); opacity: 0.85; }
+.cv-bar.cv-gap { background: repeating-linear-gradient(45deg, #3a3a3a 0 4px, transparent 4px 8px); }
+.cv-tick { position: absolute; top: 0; transform: translateX(-50%); font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.cv-tick::before { content: ""; position: absolute; left: 50%; top: -20px; height: 18px; border-left: 1px dashed #2a2a2a; }
+
 /* thin dark scrollbars, as on TradingView */
 * { scrollbar-width: thin; scrollbar-color: #3a3a3a transparent; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }

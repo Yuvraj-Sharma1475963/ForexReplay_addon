@@ -6,6 +6,7 @@ import { loadRules as loadChallengeRules } from "./challenge.js";
 import { AdrPanel } from "./adrpanel.js";
 import { AnalyticsView } from "./analyticsview.js";
 import { StrategyView } from "./strategyview.js";
+import { periodText, testedAt } from "./backtestmeta.js";
 import { Backtests } from "./backtestpanel.js";
 import { JournalPanel } from "./journalpanel.js";
 import { capture as captureChart } from "./screenshots.js";
@@ -809,6 +810,7 @@ async function boot() {
       notes.load({});
       const startTime = m5.time[clock.position - 1];
       backtests.begin(startTime, manifest.symbol);
+      warnIfTested(startTime);
       // Drawings come along only if they sit wholly before the replay's "now" (no look-ahead).
       drawings.load(drawingsBefore(drawings.toJSON(), startTime + manifest.bar_seconds));
       layer.select(null);
@@ -1019,6 +1021,18 @@ async function boot() {
     return "";
   }
   function hideReview() { review = null; drawReview(); }
+
+  /** A new replay of a strategy on dates it was already tested on: say so (hindsight creeps in). */
+  function warnIfTested(startTime) {
+    const run = backtests.current;
+    if (!run || !run.strategy) return;
+    store.listBacktests().then((list) => {
+      const hits = testedAt(list, run.strategy, startTime, run.id);
+      if (!hits.length || backtests.current !== run) return;
+      panel.say(`Careful: "${run.strategy}" was already tested on this date in ${hits.slice(0, 3).map((b) => `"${b.name}" (${periodText(b)})`).join(", ")}` +
+        `${hits.length > 3 ? " and more" : ""}. Replaying weeks you remember brings hindsight back in; Strategies → Coverage shows the untested gaps.`, "bad");
+    }).catch(() => { /* only a warning */ });
+  }
   $("trades-prev").addEventListener("click", () => focusTrade(review.k - 1));
   $("trades-next").addEventListener("click", () => focusTrade(review.k + 1));
   $("trades-hide").addEventListener("click", hideReview);
@@ -1129,6 +1143,7 @@ async function boot() {
   const strategies = new StrategyView($("strategies-view"), store, {
     onAnalytics: (journal, id) => { analytics.focusRun(journal, id); document.querySelector('[data-view="analytics"]').click(); },
     onChart: (journal, id) => showBacktestTrades(journal, id),
+    range: { first: manifest.first, last: manifest.last },
   });
   analytics.onShowTrade = async (journal, runId, tradeId) => {
     const problem = await showBacktestTrades(journal, runId, tradeId);

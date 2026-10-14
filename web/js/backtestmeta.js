@@ -76,3 +76,58 @@ export function strategiesIn(list) {
   for (const b of list) { const s = cleanMeta(b).strategy; if (s) count.set(s, (count.get(s) || 0) + 1); }
   return [...count.keys()].sort((a, b) => count.get(b) - count.get(a) || a.localeCompare(b));
 }
+
+// ----- coverage: which dates a strategy has been tested on ---------------------------
+const DAY = 86400;
+
+/** Time spans [from, to] (UTC seconds) joined where they touch or overlap, sorted. */
+export function joinSpans(spans) {
+  const sorted = spans.filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b) && b >= a).sort((x, y) => x[0] - y[0]);
+  const out = [];
+  for (const [a, b] of sorted) {
+    const last = out[out.length - 1];
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b);
+    else out.push([a, b]);
+  }
+  return out;
+}
+
+/** The parts of time covered by two or more of `spans`. */
+export function overlaps(spans) {
+  const edges = [];
+  for (const [a, b] of spans) if (Number.isFinite(a) && Number.isFinite(b) && b > a) edges.push([a, 1], [b, -1]);
+  edges.sort((x, y) => x[0] - y[0] || x[1] - y[1]); // an end before a start at the same moment: touching is not overlapping
+  const out = [];
+  let depth = 0, from = null;
+  for (const [t, d] of edges) {
+    depth += d;
+    if (depth >= 2 && from === null) from = t;
+    if (depth < 2 && from !== null) { if (t > from) out.push([from, t]); from = null; }
+  }
+  return joinSpans(out);
+}
+
+/** Stretches of [first, last] no span covers, at least `minDays` long. */
+export function gaps(spans, first, last, minDays = 7) {
+  const out = [];
+  let at = first;
+  for (const [a, b] of joinSpans(spans)) {
+    if (a - at >= minDays * DAY) out.push([at, Math.min(a, last)]);
+    at = Math.max(at, b);
+  }
+  if (last - at >= minDays * DAY) out.push([at, last]);
+  return out;
+}
+
+/** The span a backtest covers: from its start to the furthest candle it reached. */
+export const spanOf = (b) => [b.startTime, Number.isFinite(b.furthestTime) ? b.furthestTime : b.startTime];
+
+/** Backtests of `strategy` (not discarded, not `exceptId`) whose span holds `time`. */
+export function testedAt(list, strategy, time, exceptId = null) {
+  if (!strategy) return [];
+  return list.filter((b) => {
+    const m = cleanMeta(b);
+    const [a, z] = spanOf(b);
+    return b.id !== exceptId && m.strategy === strategy && m.status !== "discarded" && time >= a && time <= z;
+  });
+}
