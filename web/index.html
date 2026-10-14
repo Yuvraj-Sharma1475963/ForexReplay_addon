@@ -359,7 +359,9 @@
       Closed trades are also added to the journal (<code>strategies/&lt;journal&gt;/trades.csv</code>).</p>
     <div class="backtest-filters">
       <label>Journal <select id="backtest-filter" aria-label="Show the backtests of one journal"></select></label>
-      <input id="backtest-search" type="search" placeholder="Search names" aria-label="Search backtest names" autocomplete="off">
+      <label>Strategy <select id="backtest-strategy-filter" aria-label="Show the backtests of one strategy"></select></label>
+      <label>Status <select id="backtest-status-filter" aria-label="Show the backtests with one status"></select></label>
+      <input id="backtest-search" type="search" placeholder="Search names and notes" aria-label="Search backtest names and notes" autocomplete="off">
       <span class="muted" id="backtest-count"></span>
     </div>
     <table class="grid backtest-table">
@@ -380,6 +382,15 @@
         <span>Journal for new replays</span>
         <input id="backtest-journal" type="text" maxlength="48" autocomplete="off">
       </label>
+      <label class="field inline journal-field" title="The strategy new replays test: they are named after it">
+        <span>Strategy</span>
+        <input id="new-strategy" type="text" maxlength="60" list="new-strategies" autocomplete="off" placeholder="e.g. OB Retest">
+      </label>
+      <label class="field inline journal-field version-field" title="Which version of the strategy">
+        <span>Version</span>
+        <input id="new-version" type="text" maxlength="20" autocomplete="off" placeholder="v1">
+      </label>
+      <datalist id="new-strategies"></datalist>
       <span class="spacer"></span>
       <button type="button" class="plain bordered" id="backtest-close">Close</button>
     </div>

@@ -458,6 +458,24 @@ button.primary {
 .backtest-filters input { width: 180px; }
 .backup-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
 #backup-status.warn { color: var(--warn); }
+.backtest-table .bt-meta { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+.backtest-table .bt-meta b { color: var(--text); font-weight: 600; }
+.backtest-table .status.done { color: var(--up); }
+.backtest-table .status.discarded { color: var(--down); }
+.backtest-table .status.testing { color: var(--warn); }
+.backtest-table tr.edit-row td { background: var(--panel-2); border-radius: 6px; }
+.edit-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; padding: 4px 2px; }
+.edit-grid label { display: flex; flex-direction: column; gap: 3px; color: var(--muted); font-size: 12px; }
+.edit-grid .wide { grid-column: 1 / -1; }
+.edit-grid .with-button { display: flex; gap: 6px; }
+.edit-grid input, .edit-grid select, .edit-grid textarea {
+  width: 100%; background: transparent; color: var(--text); border: 1px solid var(--gutter, var(--border)); border-radius: 6px; padding: 5px 8px; font: inherit;
+}
+.edit-grid textarea { resize: vertical; }
+.edit-grid input:focus, .edit-grid select:focus, .edit-grid textarea:focus { outline: 0; border-color: var(--blue); }
+.edit-actions { display: flex; align-items: center; gap: 8px; }
+#new-strategy { width: 140px; }
+.version-field #new-version { width: 60px; }
 .backtest-table td { vertical-align: middle; }
 .backtest-table .nowrap { white-space: nowrap; }
 .backtest-table .actions { white-space: nowrap; text-align: right; }

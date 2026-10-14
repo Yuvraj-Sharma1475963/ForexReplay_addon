@@ -9,11 +9,14 @@
 import { formatSignedMoney } from "./account.js";
 import { newId, snapshot, validName } from "./backtest.js";
 import { backupAge, download, exportBackup, importBackup, KEY_LAST_BACKUP, tradesCsv } from "./backup.js";
+import { autoName, cleanMeta, periodText, STATUSES, statusLabel, strategiesIn } from "./backtestmeta.js";
 import { formatDateTime } from "./time.js";
 
 export const DEFAULT_JOURNAL = "manual_backtests";
 const KEY_JOURNAL = "forexreplay.journal";
 const KEY_FILTER = "forexreplay.backtests.filter"; // the journal the list shows ("" = all)
+const KEY_FILTERS = "forexreplay.backtests.filters"; // { strategy, status } the list shows
+const KEY_NEW_RUN = "forexreplay.newrun"; // { strategy, strategyVersion } for new replays
 const SAVE_DELAY_MS = 1500;
 const MAX_NAME = 80;
 
@@ -40,7 +43,7 @@ export class Backtests {
     this.onResume = onResume;
     this.onAnalytics = onAnalytics || (() => {});
     this.onChart = onChart || (async () => "");
-    this.current = null; // { id, name, journal, created, startTime } of the run on screen
+    this.current = null; // { id, name, journal, created, startTime, strategy, strategyVersion, status, notes, archived } of the run on screen
     this.everSaved = false;
     this.drawingsTouched = false;
     this.timer = null;
@@ -66,18 +69,52 @@ export class Backtests {
       this.render();
     });
     this.el("backtest-search").addEventListener("input", () => this.render());
+    for (const key of ["strategy", "status"]) {
+      this.el(`backtest-${key}-filter`).addEventListener("change", (event) => {
+        const f = this.filters;
+        f[key] = event.target.value;
+        try { localStorage.setItem(KEY_FILTERS, JSON.stringify(f)); } catch { /* private mode: not kept */ }
+        this.render();
+      });
+    }
+    const newRun = this.newRun;
+    this.el("new-strategy").value = newRun.strategy;
+    this.el("new-version").value = newRun.strategyVersion;
+    for (const id of ["new-strategy", "new-version"]) {
+      this.el(id).addEventListener("change", () => {
+        const m = cleanMeta({ strategy: this.el("new-strategy").value, strategyVersion: this.el("new-version").value });
+        try { localStorage.setItem(KEY_NEW_RUN, JSON.stringify({ strategy: m.strategy, strategyVersion: m.strategyVersion })); } catch { /* private mode */ }
+        this.el("new-strategy").value = m.strategy;
+        this.el("new-version").value = m.strategyVersion;
+        this.say(m.strategy ? `New replays will test "${m.strategy}${m.strategyVersion ? ` ${m.strategyVersion}` : ""}" and be named after it.` : "New replays will have no strategy.", "ok");
+      });
+    }
     this.el("backup-export").addEventListener("click", () => this.exportFile());
     this.el("backup-import").addEventListener("click", () => this.el("backup-file").click());
     this.el("backup-file").addEventListener("change", (event) => this.importFile(event.target));
     this.el("trades-csv").addEventListener("click", () => this.csvFile());
     this.el("backtest-rows").addEventListener("click", (event) => this.handleRowClick(event));
     this.el("backtest-rows").addEventListener("keydown", (event) => {
-      const input = event.target.closest("input.rename");
-      if (!input) return;
-      if (event.key === "Enter") { event.preventDefault(); this.finishRename(input); }
-      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); this.refresh(); } // cancel, keep the dialog open
+      const form = event.target.closest("tr.edit-row");
+      if (!form) return;
+      if (event.key === "Enter" && event.target.tagName !== "TEXTAREA") { event.preventDefault(); this.finishEdit(form); }
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); this.render(); } // cancel, keep the dialog open
     });
     this.renderStatus();
+  }
+
+  /** The strategy and version new replays test (set at the bottom of the dialog). */
+  get newRun() {
+    try { return cleanMeta(JSON.parse(localStorage.getItem(KEY_NEW_RUN) || "null") || {}); } catch { return cleanMeta(); }
+  }
+
+  get filters() {
+    if (!this.filterState) {
+      let saved = {};
+      try { saved = JSON.parse(localStorage.getItem(KEY_FILTERS) || "{}") || {}; } catch { /* private mode */ }
+      this.filterState = { strategy: typeof saved.strategy === "string" ? saved.strategy : "", status: typeof saved.status === "string" ? saved.status : "" };
+    }
+    return this.filterState;
   }
 
   get journal() {
@@ -91,9 +128,10 @@ export class Backtests {
   /** A new replay has started with its last candle at `startTime`. */
   begin(startTime, symbol) {
     this.stopTimer();
+    const meta = { ...this.newRun, status: "testing", notes: "", archived: false };
     this.current = {
-      id: newId(), name: `${symbol} from ${formatDateTime(startTime)}`, journal: this.journal,
-      created: new Date().toISOString(), startTime,
+      id: newId(), journal: this.journal, created: new Date().toISOString(), startTime, ...meta,
+      name: autoName({ ...meta, startTime }) || `${symbol} from ${formatDateTime(startTime)}`,
     };
     this.everSaved = false;
     this.drawingsTouched = false;
@@ -104,7 +142,7 @@ export class Backtests {
   continueWith(saved) {
     this.stopTimer();
     const { id, name, journal, created, startTime } = saved;
-    this.current = { id, name, journal, created, startTime };
+    this.current = { id, name, journal, created, startTime, ...cleanMeta(saved) };
     this.everSaved = true;
     this.drawingsTouched = false;
     this.renderStatus(`resumed · saved ${new Date(saved.saved).toLocaleTimeString("en-IN")}`);
@@ -286,9 +324,22 @@ export class Backtests {
     if (!counts.has(wanted)) wanted = ""; // that journal has no backtests any more
     this.el("backtest-filter").innerHTML = `<option value="">All journals (${list.length})</option>` +
       journals.map((j) => `<option value="${escapeHtml(j)}"${j === wanted ? " selected" : ""}>${escapeHtml(j)} (${counts.get(j)})</option>`).join("");
+    const f = this.filters;
+    const strategies = strategiesIn(list);
+    if (f.strategy && f.strategy !== "-" && !strategies.includes(f.strategy)) f.strategy = "";
+    this.el("backtest-strategy-filter").innerHTML = `<option value="">All strategies</option>` +
+      strategies.map((s) => `<option value="${escapeHtml(s)}"${s === f.strategy ? " selected" : ""}>${escapeHtml(s)}</option>`).join("") +
+      `<option value="-"${f.strategy === "-" ? " selected" : ""}>(no strategy)</option>`;
+    this.el("backtest-status-filter").innerHTML = `<option value="">Any status</option>` +
+      STATUSES.map((s) => `<option value="${s.id}"${s.id === f.status ? " selected" : ""}>${s.label}</option>`).join("");
+    this.el("new-strategies").innerHTML = strategies.map((s) => `<option value="${escapeHtml(s)}">`).join(""); // suggestions while typing
     const words = this.el("backtest-search").value.toLowerCase().split(/\s+/).filter(Boolean);
-    const shown = list.filter((b) => (!wanted || b.journal === wanted) &&
-      words.every((w) => String(b.name || b.id).toLowerCase().includes(w)));
+    const shown = list.filter((b) => {
+      const m = cleanMeta(b);
+      return (!wanted || b.journal === wanted) &&
+        (!f.strategy || (f.strategy === "-" ? !m.strategy : m.strategy === f.strategy)) && (!f.status || m.status === f.status) &&
+        words.every((w) => `${b.name || b.id} ${m.strategy} ${m.strategyVersion} ${m.notes}`.toLowerCase().includes(w));
+    });
     this.el("backtest-count").textContent = shown.length === list.length ? "" : `${shown.length} of ${list.length} shown`;
     rows.innerHTML = list.length === 0
       ? '<tr><td colspan="7" class="muted">No saved backtests yet. Start a replay and place a trade or draw something.</td></tr>'
@@ -308,7 +359,8 @@ export class Backtests {
     const trades = `${r.closed || 0}` + (r.open || r.pending ? ` + ${(r.open || 0) + (r.pending || 0)} active` : "");
     return `<tr>
       <td class="name-cell"><span class="bt-name">${escapeHtml(b.name)}</span>${running ? ' <span class="tag">on screen</span>' : ""}
-        <button class="plain small rename-button" data-rename="${key}" title="Rename this backtest" aria-label="Rename">&#9998;</button></td>
+        <button class="plain small rename-button" data-edit="${key}" title="Name, strategy, version, status and notes" aria-label="Edit details">&#9998;</button>
+        <div class="bt-meta">${this.metaLine(b)}</div></td>
       <td>${escapeHtml(b.journal)}</td>
       <td class="nowrap">${formatDateTime(b.furthestTime)}</td>
       <td class="num">${trades}</td>
@@ -322,15 +374,34 @@ export class Backtests {
       </td></tr>`;
   }
 
+  /** "OB Retest · v2 · Done · 05 Feb 2026 → 16 Apr 2026 · M15 · has notes" under the name. */
+  metaLine(b) {
+    const m = cleanMeta(b);
+    const parts = [];
+    if (m.strategy) parts.push(`<b>${escapeHtml(m.strategy)}</b>${m.strategyVersion ? ` · ${escapeHtml(m.strategyVersion)}` : ""}`);
+    parts.push(`<span class="status ${m.status}">${statusLabel(m.status)}</span>`);
+    const period = periodText(b);
+    if (period) parts.push(escapeHtml(period));
+    if (b.timeframe) parts.push(escapeHtml(b.timeframe));
+    if (m.notes) parts.push(`<span title="${escapeHtml(m.notes)}">notes</span>`);
+    return parts.join(" · ");
+  }
+
   async handleRowClick(event) {
     const button = event.target.closest("button");
     if (!button) return;
-    if (button.dataset.rename) {
-      this.startRename(button);
-    } else if (button.dataset.renameSave) {
-      await this.finishRename(button.closest("td").querySelector("input.rename"));
-    } else if (button.dataset.renameCancel) {
-      await this.refresh();
+    if (button.dataset.edit) {
+      this.startEdit(button);
+    } else if (button.dataset.editSave) {
+      await this.finishEdit(button.closest("tr.edit-row"));
+    } else if (button.dataset.editCancel) {
+      this.render();
+    } else if (button.dataset.editAuto) {
+      const form = button.closest("tr.edit-row");
+      const b = this.list.find((x) => `${x.journal}/${x.id}` === form.dataset.key) || {};
+      const name = autoName({ ...b, strategy: form.querySelector("[name=strategy]").value, strategyVersion: form.querySelector("[name=strategyVersion]").value });
+      if (name) form.querySelector("[name=name]").value = name;
+      else this.say("Type a strategy first: the name is made from it, the version, the period and the timeframe.", "bad");
     } else if (button.dataset.chart) {
       const [journal, id] = button.dataset.chart.split("/");
       const problem = await this.onChart(journal, id);
@@ -370,43 +441,63 @@ export class Backtests {
     }
   }
 
-  // ----- renaming -----------------------------------------------------------
-  /** Swap the name for a box to type the new one in. */
-  startRename(button) {
-    const cell = button.closest("td");
-    const name = cell.querySelector(".bt-name").textContent;
-    cell.innerHTML = `<input class="rename" type="text" maxlength="${MAX_NAME}" value="${escapeHtml(name)}" data-key="${escapeHtml(button.dataset.rename)}" aria-label="New name">
-      <button class="plain bordered small" data-rename-save="1">Save</button> <button class="plain small" data-rename-cancel="1">Cancel</button>`;
-    const input = cell.querySelector("input");
-    input.focus();
-    input.select();
+  // ----- details: name, strategy, version, status, notes -------------------------
+  /** Open the details of one backtest in a row under it. */
+  startEdit(button) {
+    this.render(); // one form at a time
+    const key = button.dataset.edit;
+    const b = this.list.find((x) => `${x.journal}/${x.id}` === key);
+    const row = [...this.el("backtest-rows").querySelectorAll("button[data-edit]")].find((x) => x.dataset.edit === key);
+    if (!b || !row) return;
+    const m = cleanMeta(b);
+    const form = document.createElement("tr");
+    form.className = "edit-row";
+    form.dataset.key = key;
+    form.innerHTML = `<td colspan="7"><div class="edit-grid">
+      <label class="wide">Name <span class="with-button"><input name="name" type="text" maxlength="${MAX_NAME}" value="${escapeHtml(b.name)}">
+        <button class="plain bordered small" data-edit-auto="1" title="Strategy, version, period and timeframe">Auto name</button></span></label>
+      <label>Strategy <input name="strategy" type="text" maxlength="60" list="new-strategies" value="${escapeHtml(m.strategy)}" placeholder="e.g. OB Retest"></label>
+      <label>Version <input name="strategyVersion" type="text" maxlength="20" value="${escapeHtml(m.strategyVersion)}" placeholder="e.g. v2"></label>
+      <label>Status <select name="status">${STATUSES.map((s) => `<option value="${s.id}"${s.id === m.status ? " selected" : ""}>${s.label}</option>`).join("")}</select></label>
+      <label class="wide">Notes: what you are testing, what you learnt <textarea name="notes" rows="3" maxlength="4000">${escapeHtml(m.notes)}</textarea></label>
+      <div class="wide edit-actions"><button class="plain primary small" data-edit-save="1">Save</button> <button class="plain small" data-edit-cancel="1">Cancel</button>
+        <span class="muted">Enter saves, Esc cancels.</span></div>
+    </div></td>`;
+    row.closest("tr").after(form);
+    form.querySelector("[name=name]").focus();
   }
 
-  async finishRename(input) {
-    const name = input.value.replace(/\s+/g, " ").trim().slice(0, MAX_NAME);
-    if (!name) { this.say("A name cannot be empty.", "bad"); input.focus(); return; }
-    const [journal, id] = input.dataset.key.split("/");
+  async finishEdit(form) {
+    const field = (name) => form.querySelector(`[name=${name}]`).value;
+    const name = field("name").replace(/\s+/g, " ").trim().slice(0, MAX_NAME);
+    if (!name) { this.say("A name cannot be empty.", "bad"); form.querySelector("[name=name]").focus(); return; }
+    const [journal, id] = form.dataset.key.split("/");
+    const b = this.list.find((x) => x.journal === journal && x.id === id) || {};
+    const fields = { name, ...cleanMeta({ ...cleanMeta(b), strategy: field("strategy"), strategyVersion: field("strategyVersion"), status: field("status"), notes: field("notes") }) };
     try {
-      await this.rename(journal, id, name);
-      this.say(`Renamed to "${name}".`, "ok");
+      await this.update(journal, id, fields);
+      this.say(`Saved "${name}".`, "ok");
     } catch (err) {
-      this.say(`Could not rename: ${err.message}`, "bad");
+      this.say(`Could not save: ${err.message}`, "bad");
     }
     await this.refresh();
   }
 
   /**
-   * Give a saved backtest a name of your own. The name is only a label: the id, the journal and the
-   * journal rows stay as they are, so the analytics page shows the new name at once.
+   * Change a saved backtest's name and details. They are labels only: the id, the journal and the
+   * journal rows stay as they are, so the analytics page shows a new name at once.
    */
-  async rename(journal, id, name) {
+  async update(journal, id, fields) {
     if (this.current && this.current.id === id && this.current.journal === journal) {
-      this.current.name = name; // the run on screen: the next save carries the new name
+      Object.assign(this.current, fields); // the run on screen: the next save carries them
       if (!(await this.save())) throw new Error("the save failed");
       return;
     }
     const data = await this.store.getBacktest(journal, id);
-    data.name = name;
+    Object.assign(data, fields);
     await this.store.putBacktest(data);
   }
+
+  /** Kept for callers of the first version: only the name. */
+  rename(journal, id, name) { return this.update(journal, id, { name }); }
 }

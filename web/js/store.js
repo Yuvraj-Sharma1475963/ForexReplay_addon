@@ -110,7 +110,8 @@ export class ServerStore {
 
 export const BROWSER_KEY = "forexreplay.store.v1"; // localStorage: the store itself (no IndexedDB, or before it was used)
 export const PENDING_KEY = "forexreplay.store.pending"; // localStorage: saves made as the tab closed, merged on the next read
-const SUMMARY = ["id", "name", "journal", "symbol", "startTime", "furthestTime", "created", "saved", "result", "settings", "challenge"];
+const SUMMARY = ["id", "name", "journal", "symbol", "startTime", "furthestTime", "created", "saved", "result", "settings", "challenge",
+  "timeframe", "strategy", "strategyVersion", "status", "notes", "archived"];
 
 const clean = (data) => (data && typeof data.backtests === "object" && data.backtests !== null ? data : { backtests: {} });
 
