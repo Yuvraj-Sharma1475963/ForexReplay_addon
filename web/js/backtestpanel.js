@@ -8,6 +8,7 @@
 
 import { formatSignedMoney } from "./account.js";
 import { newId, snapshot, validName } from "./backtest.js";
+import { backupAge, download, exportBackup, importBackup, KEY_LAST_BACKUP, tradesCsv } from "./backup.js";
 import { formatDateTime } from "./time.js";
 
 export const DEFAULT_JOURNAL = "manual_backtests";
@@ -65,6 +66,10 @@ export class Backtests {
       this.render();
     });
     this.el("backtest-search").addEventListener("input", () => this.render());
+    this.el("backup-export").addEventListener("click", () => this.exportFile());
+    this.el("backup-import").addEventListener("click", () => this.el("backup-file").click());
+    this.el("backup-file").addEventListener("change", (event) => this.importFile(event.target));
+    this.el("trades-csv").addEventListener("click", () => this.csvFile());
     this.el("backtest-rows").addEventListener("click", (event) => this.handleRowClick(event));
     this.el("backtest-rows").addEventListener("keydown", (event) => {
       const input = event.target.closest("input.rename");
@@ -215,8 +220,62 @@ export class Backtests {
     this.render();
   }
 
+  // ----- backups --------------------------------------------------------------
+  renderBackup() {
+    let last = null;
+    try { last = localStorage.getItem(KEY_LAST_BACKUP); } catch { /* private mode */ }
+    const age = backupAge(last);
+    const line = this.el("backup-status");
+    const where = this.store.kind === "browser"
+      ? `Saved only in this browser (${this.store.backend}).` : "Saved as files under strategies/ on this computer.";
+    line.textContent = `${where} Last backup: ${age.text}.`;
+    // Online, a backup file is the only other copy: nudge after a week without one.
+    line.classList.toggle("warn", this.store.kind === "browser" && this.list.length > 0 && age.days > 7);
+  }
+
+  async exportFile() {
+    try {
+      if (this.current) await this.save(); // the run on screen as it is now
+      const backup = await exportBackup(this.store);
+      const stamp = backup.exported.slice(0, 16).replace("T", "_").replace(":", "-");
+      download(`forexreplay-backup-${stamp}.json`, JSON.stringify(backup), "application/json");
+      try { localStorage.setItem(KEY_LAST_BACKUP, backup.exported); } catch { /* private mode */ }
+      this.say(`Exported ${backup.backtests.length} backtest(s). Keep the file somewhere safe (Drive, email, USB).`, "ok");
+    } catch (err) {
+      this.say(`Could not export: ${err.message}`, "bad");
+    }
+    this.renderBackup();
+  }
+
+  async importFile(input) {
+    const file = input.files && input.files[0];
+    input.value = ""; // the same file can be picked again
+    if (!file) return;
+    try {
+      const result = await importBackup(this.store, JSON.parse(await file.text()));
+      const parts = [`${result.added} added`, `${result.updated} updated`, `${result.unchanged} already up to date`];
+      const problems = result.problems.length ? ` · skipped: ${result.problems.join("; ")}` : "";
+      this.say(`Imported ${file.name}: ${parts.join(", ")}${problems}.`, result.problems.length ? "bad" : "ok");
+    } catch (err) {
+      this.say(`Could not import ${file.name}: ${err instanceof SyntaxError ? "the file is not valid JSON" : err.message}`, "bad");
+    }
+    await this.refresh();
+  }
+
+  async csvFile() {
+    try {
+      if (this.current) await this.save();
+      const { text, trades } = await tradesCsv(this.store);
+      download(`forexreplay-trades-${new Date().toISOString().slice(0, 10)}.csv`, text, "text/csv");
+      this.say(`Downloaded ${trades} trade(s) as CSV.`, "ok");
+    } catch (err) {
+      this.say(`Could not make the CSV: ${err.message}`, "bad");
+    }
+  }
+
   /** The list, narrowed to one journal and to names containing the search words. */
   render() {
+    this.renderBackup();
     const rows = this.el("backtest-rows");
     const list = this.list;
     const counts = new Map();

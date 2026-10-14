@@ -456,6 +456,8 @@ button.primary {
   background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; font: inherit;
 }
 .backtest-filters input { width: 180px; }
+.backup-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+#backup-status.warn { color: var(--warn); }
 .backtest-table td { vertical-align: middle; }
 .backtest-table .nowrap { white-space: nowrap; }
 .backtest-table .actions { white-space: nowrap; text-align: right; }

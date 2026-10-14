@@ -367,6 +367,14 @@
       <tbody id="backtest-rows"></tbody>
     </table>
     <p class="order-message" id="backtest-message"></p>
+    <div class="backup-row">
+      <span id="backup-status" class="muted"></span>
+      <span class="spacer"></span>
+      <button type="button" class="plain bordered small" id="backup-export" title="Download every backtest (trades, drawings, notes) as one .json file">Export backup</button>
+      <button type="button" class="plain bordered small" id="backup-import" title="Load backtests from a backup file; newer copies already here are kept">Import backup</button>
+      <button type="button" class="plain bordered small" id="trades-csv" title="Download every closed trade as a CSV for Excel, Google Sheets or Python">Trades CSV</button>
+      <input type="file" id="backup-file" accept=".json,application/json" hidden>
+    </div>
     <div class="dialog-actions">
       <label class="field inline journal-field" title="Folder under strategies/ for new replays: letters, digits, - and _">
         <span>Journal for new replays</span>
