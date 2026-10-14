@@ -167,6 +167,42 @@ def delete_image(journal: str, name: str, root: Path = JOURNALS_DIR) -> None:
             path.unlink()
 
 
+def move(journal: str, backtest_id: str, to: str, root: Path = JOURNALS_DIR) -> dict:
+    """Move a backtest to another journal: its file, its journal rows and its trades' screenshots.
+
+    It is saved under the new journal first (which writes its rows there), then its screenshots
+    move, then its rows leave the old journal and the old file goes. A backtest with the same id
+    already in the new journal is refused rather than overwritten.
+    """
+    check_name(to, "A journal name")
+    if to == journal:
+        raise BacktestError("It is already in that journal.")
+    data = load(journal, backtest_id, root)
+    if path_for(to, backtest_id, root).exists():
+        raise BacktestError(f"{to} already has a backtest {backtest_id}.")
+    data["journal"] = to
+    result = save(to, backtest_id, data, root)
+    moved_images = 0
+    names = {n for t in data.get("trades", []) for n in (t.get("screenshots") or []) if isinstance(n, str)}
+    with _lock:
+        for name in names:
+            try:
+                source, target = image_path(journal, name, root), image_path(to, name, root)
+            except BacktestError:
+                continue
+            if source.exists() and not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source.replace(target)
+                moved_images += 1
+        old_log = root / journal / "trades.csv"
+        dropped = TradeJournal(old_log, Instrument(symbol=str(data.get("symbol") or "EURUSD")), run_id=backtest_id).drop_run(backtest_id) \
+            if old_log.exists() else 0
+        old = path_for(journal, backtest_id, root)
+        if old.exists():
+            old.unlink()
+    return {**result, "journalRemoved": dropped, "screenshotsMoved": moved_images}
+
+
 def delete(journal: str, backtest_id: str, root: Path = JOURNALS_DIR) -> None:
     """Remove the backtest file. Its trades stay in the journal."""
     path = path_for(journal, backtest_id, root)

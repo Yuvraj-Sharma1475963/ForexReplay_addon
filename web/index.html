@@ -362,10 +362,29 @@
       <label>Strategy <select id="backtest-strategy-filter" aria-label="Show the backtests of one strategy"></select></label>
       <label>Status <select id="backtest-status-filter" aria-label="Show the backtests with one status"></select></label>
       <input id="backtest-search" type="search" placeholder="Search names and notes" aria-label="Search backtest names and notes" autocomplete="off">
+      <label class="check-label"><input type="checkbox" id="backtest-show-archived"> Show archived</label>
       <span class="muted" id="backtest-count"></span>
+      <span class="spacer"></span>
+      <button type="button" class="plain bordered small" id="delete-empty" hidden title="Delete every backtest with no trades (the one on screen stays)"></button>
+    </div>
+    <div class="bulk-bar" id="bulk-bar" hidden>
+      <b id="bulk-count"></b>
+      <select id="bulk-action" aria-label="What to do with the ticked backtests">
+        <option value="">Choose an action…</option>
+        <option value="move">Move to journal…</option>
+        <option value="strategy">Set strategy and version…</option>
+        <option value="status">Set status…</option>
+        <option value="archive">Archive (hide from this list)</option>
+        <option value="unarchive">Unarchive</option>
+        <option value="delete">Delete</option>
+      </select>
+      <span id="bulk-inputs"></span>
+      <button type="button" class="plain primary small" id="bulk-apply" disabled>Apply</button>
+      <button type="button" class="plain small" id="bulk-clear">Clear selection</button>
+      <span class="muted bulk-hint">To merge journals: pick one in Journal above, tick all, Move to journal.</span>
     </div>
     <table class="grid backtest-table">
-      <thead><tr><th>Name</th><th>Journal</th><th>Reached (IST)</th><th class="num">Trades</th><th class="num">Result</th><th>Saved</th><th></th></tr></thead>
+      <thead><tr><th class="pick"><input type="checkbox" id="bt-select-all" aria-label="Tick every backtest shown" title="Tick every backtest shown"></th><th>Name</th><th>Journal</th><th>Reached (IST)</th><th class="num">Trades</th><th class="num">Result</th><th>Saved</th><th></th></tr></thead>
       <tbody id="backtest-rows"></tbody>
     </table>
     <p class="order-message" id="backtest-message"></p>

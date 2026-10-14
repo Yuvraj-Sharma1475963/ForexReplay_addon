@@ -12,6 +12,7 @@ It also stores backtests for the app (see backtests.py):
     GET    /api/backtests/<journal>/<id>     one backtest
     PUT    /api/backtests/<journal>/<id>     save it, and add its closed trades to the journal
     DELETE /api/backtests/<journal>/<id>     remove it (its journal rows stay)
+    POST   /api/backtests/<journal>/<id>/move  {"to": journal}: move it, its rows and screenshots
     GET / PUT / DELETE /api/screenshots/<journal>/<name>.png   chart pictures for trades
     GET    /api/journals                     journal folders that have a trades.csv
     GET    /api/journal/<journal>            the rows of a journal, for the analytics page
@@ -114,6 +115,19 @@ class Handler(SimpleHTTPRequestHandler):
             self._screenshot("PUT")
         else:
             self._backtest("PUT")
+
+    def do_POST(self):  # noqa: N802
+        parts = self.path.split("?")[0].split("/")  # ['', 'api', 'backtests', journal, id, 'move']
+        if len(parts) != 6 or parts[:3] != ["", "api", "backtests"] or parts[5] != "move":
+            self._json({"error": "Not found."}, 404)
+            return
+        try:
+            body = self._read_json()
+            self._json(backtests.move(parts[3], parts[4], body.get("to") if isinstance(body, dict) else None, self.journals_root))
+        except FileNotFoundError as err:
+            self._json({"error": str(err)}, 404)
+        except (backtests.BacktestError, ValueError) as err:
+            self._json({"error": str(err)}, 400)
 
     def do_DELETE(self):  # noqa: N802
         if self.path.startswith("/api/screenshots/"):

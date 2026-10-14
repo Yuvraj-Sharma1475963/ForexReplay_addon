@@ -247,3 +247,49 @@ def test_the_website_build_copies_the_app_and_asks_not_to_be_listed():
         assert (other / "keep.txt").exists()
         with pytest.raises(ValueError):
             build_site(web / "out", web_root=web, refresh=False)
+
+
+def test_moving_a_backtest_takes_its_rows_and_screenshots_and_leaves_others():
+    png = b"\x89PNG\r\n\x1a\n" + b"image"
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        shot = "bt-1-t1-entry.png"
+        backtests.save("test_journal", "bt-1", backtest([closed_trade(1, screenshots=[shot]), closed_trade(2)]), root)
+        backtests.save("test_journal", "bt-2", backtest([closed_trade(1)], backtest_id="bt-2"), root)
+        backtests.save_image("test_journal", shot, png, root)
+
+        result = backtests.move("test_journal", "bt-1", "other", root)
+        assert (result["journalAdded"], result["journalRemoved"], result["screenshotsMoved"]) == (2, 2, 1)
+        assert [(r["run_id"], r["trade_id"]) for r in read_journal(root)] == [("bt-2", "1")]  # only the other run stays
+        assert [r["trade_id"] for r in backtests.journal_rows("other", root)] == ["1", "2"]
+        assert backtests.load("other", "bt-1", root)["journal"] == "other"
+        assert backtests.load_image("other", shot, root) == png
+        with pytest.raises(FileNotFoundError):
+            backtests.load("test_journal", "bt-1", root)
+
+        with pytest.raises(backtests.BacktestError):  # not onto itself, nor onto a backtest already there
+            backtests.move("test_journal", "bt-2", "test_journal", root)
+        backtests.save("other", "bt-2", backtest([], backtest_id="bt-2", journal="other"), root)
+        with pytest.raises(backtests.BacktestError):
+            backtests.move("test_journal", "bt-2", "other", root)
+        with pytest.raises(backtests.BacktestError):
+            backtests.move("test_journal", "bt-2", "no spaces", root)
+
+
+def test_server_moves_a_backtest():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        server = make_server(port=18805, root=root, journals_root=root / "strategies")
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{server.server_address[1]}/api/backtests"
+        try:
+            backtests.save("test_journal", "bt-1", backtest([closed_trade(1)]), root / "strategies")
+            request = urllib.request.Request(f"{base}/test_journal/bt-1/move", data=json.dumps({"to": "other"}).encode(),
+                                             method="POST", headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(request) as r:
+                assert json.loads(r.read())["journalRemoved"] == 1
+            with urllib.request.urlopen(base) as r:
+                assert [(b["journal"], b["id"]) for b in json.loads(r.read())["backtests"]] == [("other", "bt-1")]
+        finally:
+            server.shutdown()
+            server.server_close()

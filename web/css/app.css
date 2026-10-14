@@ -476,6 +476,16 @@ button.primary {
 .edit-actions { display: flex; align-items: center; gap: 8px; }
 #new-strategy { width: 140px; }
 .version-field #new-version { width: 60px; }
+.backtest-table th.pick, .backtest-table td.pick { width: 26px; padding-right: 0; }
+.backtest-table tr.archived td:not(.pick):not(.actions) { opacity: 0.55; }
+.backtest-table tr.picked td { background: rgba(41, 98, 255, 0.08); }
+.check-label { display: inline-flex; align-items: center; gap: 5px; }
+.bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; padding: 6px 10px; border: 1px solid var(--blue); border-radius: 6px; background: rgba(41, 98, 255, 0.08); }
+.bulk-bar[hidden] { display: none; }
+.bulk-bar select, .bulk-bar input { background: transparent; color: var(--text); border: 1px solid var(--gutter, var(--border)); border-radius: 6px; padding: 3px 6px; font: inherit; }
+.bulk-bar input { width: 130px; }
+.bulk-bar .bulk-hint { font-size: 11.5px; }
+#bulk-apply.armed, #delete-empty.armed { background: var(--down); color: #fff; }
 .backtest-table td { vertical-align: middle; }
 .backtest-table .nowrap { white-space: nowrap; }
 .backtest-table .actions { white-space: nowrap; text-align: right; }

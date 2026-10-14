@@ -112,3 +112,17 @@ test("backup age for the reminder", () => {
   assert.equal(backupAge("2026-10-14T08:00:00Z", now).text, "1 day ago");
   assert.equal(backupAge("2026-10-06T08:00:00Z", now).days, 9);
 });
+
+test("online: moving a backtest to another journal moves its trades with it", async () => {
+  const store = new BrowserStore(memory(), fakeDb());
+  await store.putBacktest(backtest("bt-1", "2026-10-01T10:00:00Z"));
+  await store.putBacktest(backtest("bt-2", "2026-10-02T10:00:00Z", { journal: "j2" }));
+  await store.moveBacktest("j1", "bt-1", "j2");
+  assert.deepEqual((await store.listBacktests()).map((b) => `${b.journal}/${b.id}`), ["j2/bt-2", "j2/bt-1"]);
+  assert.deepEqual(await store.listJournals(), [{ name: "j2", trades: 2 }]);
+  assert.equal((await store.journalRows("j2")).length, 2);
+  await assert.rejects(store.moveBacktest("j2", "bt-1", "j2"), /already in that journal/);
+  await assert.rejects(store.moveBacktest("j2", "bt-1", "has space"), /journal name/);
+  await store.putBacktest(backtest("bt-1", "2026-10-03T10:00:00Z", { journal: "j3" }));
+  await assert.rejects(store.moveBacktest("j2", "bt-1", "j3"), /already has/);
+});

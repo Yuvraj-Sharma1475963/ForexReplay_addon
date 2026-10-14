@@ -69,6 +69,24 @@ export class Backtests {
       this.render();
     });
     this.el("backtest-search").addEventListener("input", () => this.render());
+    this.selected = new Set(); // "journal/id" of the ticked backtests
+    this.shownKeys = [];
+    this.el("backtest-show-archived").addEventListener("change", () => this.render());
+    this.el("backtest-rows").addEventListener("change", (event) => {
+      const box = event.target.closest("input.bt-pick");
+      if (!box) return;
+      if (box.checked) this.selected.add(box.dataset.key); else this.selected.delete(box.dataset.key);
+      box.closest("tr").classList.toggle("picked", box.checked);
+      this.renderBulk();
+    });
+    this.el("bt-select-all").addEventListener("change", (event) => {
+      for (const key of this.shownKeys) { if (event.target.checked) this.selected.add(key); else this.selected.delete(key); }
+      this.render();
+    });
+    this.el("bulk-action").addEventListener("change", () => { this.armedBulk = false; this.renderBulkInputs(); });
+    this.el("bulk-apply").addEventListener("click", () => this.applyBulk());
+    this.el("bulk-clear").addEventListener("click", () => { this.selected.clear(); this.render(); });
+    this.el("delete-empty").addEventListener("click", () => this.deleteEmpty());
     for (const key of ["strategy", "status"]) {
       this.el(`backtest-${key}-filter`).addEventListener("change", (event) => {
         const f = this.filters;
@@ -237,6 +255,8 @@ export class Backtests {
 
   async open() {
     this.armedDelete = null;
+    this.armedEmpty = false;
+    this.armedBulk = false;
     this.say("");
     this.el("backtest-journal").value = this.journal;
     if (!this.dialog.open) this.dialog.showModal();
@@ -334,30 +354,47 @@ export class Backtests {
       STATUSES.map((s) => `<option value="${s.id}"${s.id === f.status ? " selected" : ""}>${s.label}</option>`).join("");
     this.el("new-strategies").innerHTML = strategies.map((s) => `<option value="${escapeHtml(s)}">`).join(""); // suggestions while typing
     const words = this.el("backtest-search").value.toLowerCase().split(/\s+/).filter(Boolean);
+    const showArchived = this.el("backtest-show-archived").checked;
+    const archived = list.filter((b) => cleanMeta(b).archived).length;
     const shown = list.filter((b) => {
       const m = cleanMeta(b);
-      return (!wanted || b.journal === wanted) &&
+      return (showArchived || !m.archived) && (!wanted || b.journal === wanted) &&
         (!f.strategy || (f.strategy === "-" ? !m.strategy : m.strategy === f.strategy)) && (!f.status || m.status === f.status) &&
         words.every((w) => `${b.name || b.id} ${m.strategy} ${m.strategyVersion} ${m.notes}`.toLowerCase().includes(w));
     });
-    this.el("backtest-count").textContent = shown.length === list.length ? "" : `${shown.length} of ${list.length} shown`;
+    this.el("backtest-count").textContent = (shown.length === list.length ? "" : `${shown.length} of ${list.length} shown`) +
+      (archived && !showArchived ? `${shown.length === list.length ? "" : " · "}${archived} archived hidden` : "");
+    const keys = new Set(list.map((b) => `${b.journal}/${b.id}`));
+    for (const key of [...this.selected]) if (!keys.has(key)) this.selected.delete(key); // deleted or moved since
+    this.shownKeys = shown.map((b) => `${b.journal}/${b.id}`);
+    const all = this.el("bt-select-all");
+    all.checked = this.shownKeys.length > 0 && this.shownKeys.every((k) => this.selected.has(k));
+    all.indeterminate = !all.checked && this.shownKeys.some((k) => this.selected.has(k));
     rows.innerHTML = list.length === 0
-      ? '<tr><td colspan="7" class="muted">No saved backtests yet. Start a replay and place a trade or draw something.</td></tr>'
-      : shown.length === 0 ? '<tr><td colspan="7" class="muted">No backtest matches. Choose "All journals" or clear the search.</td></tr>'
+      ? '<tr><td colspan="8" class="muted">No saved backtests yet. Start a replay and place a trade or draw something.</td></tr>'
+      : shown.length === 0 ? '<tr><td colspan="8" class="muted">No backtest matches. Choose "All journals", clear the search or show archived ones.</td></tr>'
         : shown.map((b) => this.row(b)).join("");
+    const empty = this.emptyOnes();
+    const button = this.el("delete-empty");
+    button.hidden = empty.length === 0;
+    if (!this.armedEmpty) { button.textContent = `Delete empty (${empty.length})`; button.classList.remove("armed"); }
+    this.renderBulk();
   }
 
   row(b) {
     const key = `${escapeHtml(b.journal)}/${escapeHtml(b.id)}`;
     if (b.error) {
-      return `<tr><td colspan="6">${escapeHtml(b.id)} <span class="bad">${escapeHtml(b.error)}</span></td>` +
+      return `<tr><td class="pick"></td><td colspan="6">${escapeHtml(b.id)} <span class="bad">${escapeHtml(b.error)}</span></td>` +
         `<td class="actions"><button class="plain small" data-delete="${key}">Delete</button></td></tr>`;
     }
     const r = b.result || {};
     const running = this.current && this.current.id === b.id;
     const tone = (r.totalR || 0) >= 0 ? "up" : "down";
     const trades = `${r.closed || 0}` + (r.open || r.pending ? ` + ${(r.open || 0) + (r.pending || 0)} active` : "");
-    return `<tr>
+    const picked = this.selected.has(`${b.journal}/${b.id}`);
+    const archived = cleanMeta(b).archived;
+    return `<tr class="${[picked ? "picked" : "", archived ? "archived" : ""].join(" ").trim()}">
+      <td class="pick"><input type="checkbox" class="bt-pick" data-key="${key}"${picked ? " checked" : ""} aria-label="Tick ${escapeHtml(b.name)}"></td>
       <td class="name-cell"><span class="bt-name">${escapeHtml(b.name)}</span>${running ? ' <span class="tag">on screen</span>' : ""}
         <button class="plain small rename-button" data-edit="${key}" title="Name, strategy, version, status and notes" aria-label="Edit details">&#9998;</button>
         <div class="bt-meta">${this.metaLine(b)}</div></td>
@@ -384,6 +421,7 @@ export class Backtests {
     if (period) parts.push(escapeHtml(period));
     if (b.timeframe) parts.push(escapeHtml(b.timeframe));
     if (m.notes) parts.push(`<span title="${escapeHtml(m.notes)}">notes</span>`);
+    if (m.archived) parts.push('<span class="tag">archived</span>');
     return parts.join(" · ");
   }
 
@@ -453,13 +491,14 @@ export class Backtests {
     const form = document.createElement("tr");
     form.className = "edit-row";
     form.dataset.key = key;
-    form.innerHTML = `<td colspan="7"><div class="edit-grid">
+    form.innerHTML = `<td colspan="8"><div class="edit-grid">
       <label class="wide">Name <span class="with-button"><input name="name" type="text" maxlength="${MAX_NAME}" value="${escapeHtml(b.name)}">
         <button class="plain bordered small" data-edit-auto="1" title="Strategy, version, period and timeframe">Auto name</button></span></label>
       <label>Strategy <input name="strategy" type="text" maxlength="60" list="new-strategies" value="${escapeHtml(m.strategy)}" placeholder="e.g. OB Retest"></label>
       <label>Version <input name="strategyVersion" type="text" maxlength="20" value="${escapeHtml(m.strategyVersion)}" placeholder="e.g. v2"></label>
       <label>Status <select name="status">${STATUSES.map((s) => `<option value="${s.id}"${s.id === m.status ? " selected" : ""}>${s.label}</option>`).join("")}</select></label>
       <label class="wide">Notes: what you are testing, what you learnt <textarea name="notes" rows="3" maxlength="4000">${escapeHtml(m.notes)}</textarea></label>
+      <label class="check-label wide"><input name="archived" type="checkbox"${m.archived ? " checked" : ""}> Archived: hidden from this list unless "Show archived" is ticked; still counted in Analytics</label>
       <div class="wide edit-actions"><button class="plain primary small" data-edit-save="1">Save</button> <button class="plain small" data-edit-cancel="1">Cancel</button>
         <span class="muted">Enter saves, Esc cancels.</span></div>
     </div></td>`;
@@ -473,7 +512,8 @@ export class Backtests {
     if (!name) { this.say("A name cannot be empty.", "bad"); form.querySelector("[name=name]").focus(); return; }
     const [journal, id] = form.dataset.key.split("/");
     const b = this.list.find((x) => x.journal === journal && x.id === id) || {};
-    const fields = { name, ...cleanMeta({ ...cleanMeta(b), strategy: field("strategy"), strategyVersion: field("strategyVersion"), status: field("status"), notes: field("notes") }) };
+    const fields = { name, ...cleanMeta({ ...cleanMeta(b), strategy: field("strategy"), strategyVersion: field("strategyVersion"),
+      status: field("status"), notes: field("notes"), archived: form.querySelector("[name=archived]").checked }) };
     try {
       await this.update(journal, id, fields);
       this.say(`Saved "${name}".`, "ok");
@@ -496,6 +536,118 @@ export class Backtests {
     const data = await this.store.getBacktest(journal, id);
     Object.assign(data, fields);
     await this.store.putBacktest(data);
+  }
+
+  // ----- many at once: tick, then move, label, archive or delete ---------------
+  isOnScreen(key) { return !!this.current && `${this.current.journal}/${this.current.id}` === key; }
+
+  /** Backtests with no trades at all (none closed, open or waiting), except the one on screen. */
+  emptyOnes() {
+    return this.list.filter((b) => {
+      const r = b.result || {};
+      return !b.error && !(r.closed || r.open || r.pending) && !this.isOnScreen(`${b.journal}/${b.id}`);
+    });
+  }
+
+  renderBulk() {
+    const n = this.selected.size;
+    this.el("bulk-bar").hidden = n === 0;
+    this.el("bulk-count").textContent = `${n} ticked`;
+    if (n === 0) { this.el("bulk-action").value = ""; this.armedBulk = false; this.renderBulkInputs(); }
+  }
+
+  renderBulkInputs() {
+    const action = this.el("bulk-action").value;
+    const journals = [...new Set(this.list.map((b) => b.journal))].sort();
+    const box = this.el("bulk-inputs");
+    if (action === "move") {
+      box.innerHTML = `<input id="bulk-journal" list="bulk-journals" maxlength="48" placeholder="journal name" aria-label="Journal to move them to">` +
+        `<datalist id="bulk-journals">${journals.map((j) => `<option value="${escapeHtml(j)}">`).join("")}</datalist>`;
+    } else if (action === "strategy") {
+      box.innerHTML = `<input id="bulk-strategy" list="new-strategies" maxlength="60" placeholder="strategy" aria-label="Strategy">` +
+        `<input id="bulk-version" maxlength="20" placeholder="version" aria-label="Version" style="width:70px">`;
+    } else if (action === "status") {
+      box.innerHTML = `<select id="bulk-status" aria-label="Status">${STATUSES.map((s) => `<option value="${s.id}">${s.label}</option>`).join("")}</select>`;
+    } else {
+      box.innerHTML = "";
+    }
+    const apply = this.el("bulk-apply");
+    apply.disabled = !action;
+    apply.textContent = "Apply";
+    apply.classList.remove("armed");
+  }
+
+  async applyBulk() {
+    const action = this.el("bulk-action").value;
+    const keys = [...this.selected];
+    if (!action || keys.length === 0) return;
+    const apply = this.el("bulk-apply");
+    if (action === "delete" && !this.armedBulk) { // cannot be undone: a second click
+      this.armedBulk = true;
+      apply.textContent = `Delete ${keys.length}?`;
+      apply.classList.add("armed");
+      this.say(`Click "Delete ${keys.length}?" to remove them for good. Their trades stay in the journal; export a backup first if unsure.`);
+      return;
+    }
+    let to = "", fields = null;
+    if (action === "move") {
+      to = this.el("bulk-journal").value.trim();
+      if (!validName(to)) { this.say("A journal name may use only letters, digits, - and _.", "bad"); return; }
+    } else if (action === "strategy") {
+      fields = cleanMeta({ strategy: this.el("bulk-strategy").value, strategyVersion: this.el("bulk-version").value });
+      fields = { strategy: fields.strategy, strategyVersion: fields.strategyVersion };
+    } else if (action === "status") {
+      fields = { status: this.el("bulk-status").value };
+    } else if (action === "archive" || action === "unarchive") {
+      fields = { archived: action === "archive" };
+    }
+    apply.disabled = true;
+    let done = 0;
+    const problems = [];
+    for (const key of keys) {
+      const [journal, id] = key.split("/");
+      const b = this.list.find((x) => x.journal === journal && x.id === id);
+      const label = b ? b.name : id;
+      try {
+        if ((action === "move" || action === "delete") && this.isOnScreen(key)) throw new Error("it is on screen; leave the replay first");
+        if (action === "move") {
+          if (journal === to) continue;
+          await this.store.moveBacktest(journal, id, to);
+        } else if (action === "delete") {
+          await this.store.deleteBacktest(journal, id);
+        } else {
+          await this.update(journal, id, fields);
+        }
+        done++;
+      } catch (err) {
+        problems.push(`${label}: ${err.message}`);
+      }
+    }
+    const verb = { move: `moved to ${to}`, strategy: "labelled", status: "given that status", archive: "archived", unarchive: "unarchived", delete: "deleted" }[action];
+    this.say(`${done} backtest(s) ${verb}.${problems.length ? ` Not done: ${problems.join("; ")}.` : ""}`, problems.length ? "bad" : "ok");
+    this.selected.clear();
+    this.armedBulk = false;
+    this.el("bulk-action").value = "";
+    await this.refresh();
+  }
+
+  async deleteEmpty() {
+    const empty = this.emptyOnes();
+    const button = this.el("delete-empty");
+    if (!this.armedEmpty) {
+      this.armedEmpty = true;
+      button.textContent = `Delete ${empty.length} empty?`;
+      button.classList.add("armed");
+      this.say(`Click again to delete ${empty.length} backtest(s) with no trades: ${empty.slice(0, 5).map((b) => b.name).join(", ")}${empty.length > 5 ? "…" : ""}`);
+      return;
+    }
+    this.armedEmpty = false;
+    let done = 0;
+    for (const b of empty) {
+      try { await this.store.deleteBacktest(b.journal, b.id); done++; } catch { /* listed below as not deleted */ }
+    }
+    this.say(`Deleted ${done} empty backtest(s)${done < empty.length ? `; ${empty.length - done} could not be deleted` : ""}.`, done < empty.length ? "bad" : "ok");
+    await this.refresh();
   }
 
   /** Kept for callers of the first version: only the name. */

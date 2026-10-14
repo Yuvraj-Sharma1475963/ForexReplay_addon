@@ -98,6 +98,12 @@ export class ServerStore {
     } catch { /* the tab is going away */ }
   }
   deleteBacktest(journal, id) { return request(this.fetch, `api/backtests/${enc(journal)}/${enc(id)}`, { method: "DELETE" }); }
+  /** Move a backtest to another journal: the server moves its file, journal rows and screenshots. */
+  moveBacktest(journal, id, to) {
+    return request(this.fetch, `api/backtests/${enc(journal)}/${enc(id)}/move`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to }),
+    });
+  }
   listJournals() { return request(this.fetch, "api/journals").then((b) => b.journals || []); }
   journalRows(name) { return request(this.fetch, `api/journal/${enc(name)}`).then((b) => b.rows); }
   screenshotUrl(journal, name) { return `api/screenshots/${enc(journal)}/${enc(name)}`; }
@@ -211,6 +217,20 @@ export class BrowserStore {
       } catch { /* full: the IndexedDB write below may still make it */ }
     }
     this.putBacktest(data).catch(() => { /* the tab is going away */ });
+  }
+
+  /** Move a backtest to another journal (online, its journal rows are made from it, so they follow). */
+  async moveBacktest(journal, id, to) {
+    if (typeof to !== "string" || !/^[A-Za-z0-9_-]{1,48}$/.test(to)) throw new Error("a journal name may use only letters, digits, - and _");
+    if (to === journal) throw new Error("it is already in that journal");
+    const all = await this.read();
+    const b = all.backtests[`${journal}/${id}`];
+    if (!b) throw new Error(`No saved backtest ${journal}/${id}.`);
+    if (all.backtests[`${to}/${id}`]) throw new Error(`${to} already has a backtest ${id}`);
+    delete all.backtests[`${journal}/${id}`];
+    all.backtests[`${to}/${id}`] = { ...b, journal: to };
+    await this.write(all);
+    return { ok: true };
   }
 
   async deleteBacktest(journal, id) {

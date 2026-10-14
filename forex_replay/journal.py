@@ -190,6 +190,16 @@ class TradeJournal:
             self._rewrite(rows)
         return changed
 
+    def drop_run(self, run_id: str) -> int:
+        """Remove every row of one run (a backtest moved to another journal). Returns how many went."""
+        with self.path.open(newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+        keep = [row for row in rows if row["run_id"] != run_id]
+        if len(keep) != len(rows):
+            self._rewrite(keep)
+            self._logged = {(row["run_id"], row["trade_id"]) for row in keep}
+        return len(rows) - len(keep)
+
     def log(self, trade: Trade) -> bool:
         """Append a closed trade. Returns False if it was already in the journal."""
         return self.log_row(trade_to_row(trade, self.instrument, self.run_id))
