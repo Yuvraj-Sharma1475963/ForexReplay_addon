@@ -22,9 +22,15 @@ export async function openStore(fetchFn = fetch) {
   } catch { /* no site.json: the local app */ }
   if (!online) return new ServerStore(fetchFn);
   const db = await IdbBackend.open();
+  if (!db) return new BrowserStore(globalThis.localStorage, null);
   const store = new BrowserStore(globalThis.localStorage, db);
-  if (db) await store.adoptLocalStorage(); // backtests saved before IndexedDB was used move over once
-  return store;
+  try {
+    await store.adoptLocalStorage(); // backtests saved before IndexedDB was used move over once
+    return store;
+  } catch {
+    // IndexedDB opened but would not take the data: carry on with localStorage, where it still is.
+    return new BrowserStore(globalThis.localStorage, null);
+  }
 }
 
 /** One record ("store": every backtest) in an IndexedDB database. */
