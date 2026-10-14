@@ -126,3 +126,15 @@ test("online: moving a backtest to another journal moves its trades with it", as
   await store.putBacktest(backtest("bt-1", "2026-10-03T10:00:00Z", { journal: "j3" }));
   await assert.rejects(store.moveBacktest("j2", "bt-1", "j3"), /already has/);
 });
+
+test("the strategy library travels in a backup; importing fills gaps and never overwrites what is here", async () => {
+  const a = new BrowserStore(memory(), fakeDb());
+  await a.putLibrary({ strategies: { "OB Retest": { rules: "from the file", versions: { v1: "first", v2: "London only" } }, "FVG": { rules: "x", versions: {} } } });
+  const file = await exportBackup(a);
+  const b = new BrowserStore(memory(), fakeDb());
+  await b.putLibrary({ strategies: { "OB Retest": { rules: "mine", versions: { v1: "" } } } });
+  const result = await importBackup(b, JSON.parse(JSON.stringify(file)));
+  assert.equal(result.strategiesAdded, 1);
+  assert.deepEqual(await b.getLibrary(), { strategies: {
+    "OB Retest": { rules: "mine", versions: { v1: "first", v2: "London only" } }, "FVG": { rules: "x", versions: {} } } });
+});

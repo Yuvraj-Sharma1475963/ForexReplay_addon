@@ -49,6 +49,7 @@
     <div class="divider"></div>
     <div class="group tabs" aria-label="View">
       <button class="active" data-view="chart">Chart</button>
+      <button data-view="strategies">Strategies</button>
       <button data-view="analytics">Analytics</button>
       <button data-view="data">Data</button>
     </div>
@@ -183,6 +184,18 @@
           </table></div>
         </div>
       </div>
+    </section>
+
+    <section class="view analytics strategies" id="strategies-view" hidden>
+      <div class="view-head">
+        <h1>Strategies</h1>
+        <span class="spacer"></span>
+        <label class="check-label muted" title="Discarded backtests are ideas you dropped; leave them out of the numbers unless you want them">
+          <input type="checkbox" id="st-discarded"> Count discarded backtests</label>
+      </div>
+      <p class="lead" id="st-message" hidden></p>
+      <div class="st-cards" id="st-cards"></div>
+      <div id="st-detail"></div>
     </section>
 
     <section class="view" id="data-view" hidden>

@@ -203,6 +203,47 @@ def move(journal: str, backtest_id: str, to: str, root: Path = JOURNALS_DIR) -> 
     return {**result, "journalRemoved": dropped, "screenshotsMoved": moved_images}
 
 
+LIBRARY_FILE = "_library.json"  # strategies/_library.json: each strategy's rules and what each version changed
+
+
+def clean_library(data) -> dict:
+    """{"strategies": {name: {"rules": text, "versions": {version: text}}}}, with anything else dropped."""
+    out = {"strategies": {}}
+    strategies = data.get("strategies") if isinstance(data, dict) else None
+    if not isinstance(strategies, dict):
+        return out
+    for name, entry in list(strategies.items())[:500]:
+        if not isinstance(name, str) or not name.strip() or len(name) > 60 or not isinstance(entry, dict):
+            continue
+        versions = entry.get("versions") if isinstance(entry.get("versions"), dict) else {}
+        out["strategies"][name] = {
+            "rules": str(entry.get("rules") or "")[:8000],
+            "versions": {str(v)[:20]: str(t or "")[:2000] for v, t in list(versions.items())[:100] if isinstance(v, str) and v.strip()},
+        }
+    return out
+
+
+def load_library(root: Path = JOURNALS_DIR) -> dict:
+    path = root / LIBRARY_FILE
+    if not path.exists():
+        return {"strategies": {}}
+    try:
+        return clean_library(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return {"strategies": {}}
+
+
+def save_library(data, root: Path = JOURNALS_DIR) -> dict:
+    library = clean_library(data)
+    path = root / LIBRARY_FILE
+    with _lock:
+        root.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(library, indent=1), encoding="utf-8")
+        tmp.replace(path)
+    return {"ok": True}
+
+
 def delete(journal: str, backtest_id: str, root: Path = JOURNALS_DIR) -> None:
     """Remove the backtest file. Its trades stay in the journal."""
     path = path_for(journal, backtest_id, root)

@@ -11,6 +11,7 @@
 //
 // Both stores offer the same calls, so the rest of the app does not care which one it has.
 
+import { cleanLibrary } from "./backtestmeta.js";
 import { serverOffsetSeconds } from "./timeframes.js";
 
 /** The static build writes site.json; the Python server does not serve one. */
@@ -98,6 +99,13 @@ export class ServerStore {
     } catch { /* the tab is going away */ }
   }
   deleteBacktest(journal, id) { return request(this.fetch, `api/backtests/${enc(journal)}/${enc(id)}`, { method: "DELETE" }); }
+  /** Each strategy's rules and what each version changed (strategies/_library.json). */
+  getLibrary() { return request(this.fetch, "api/library").then(cleanLibrary); }
+  putLibrary(library) {
+    return request(this.fetch, "api/library", {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cleanLibrary(library)),
+    });
+  }
   /** Move a backtest to another journal: the server moves its file, journal rows and screenshots. */
   moveBacktest(journal, id, to) {
     return request(this.fetch, `api/backtests/${enc(journal)}/${enc(id)}/move`, {
@@ -217,6 +225,15 @@ export class BrowserStore {
       } catch { /* full: the IndexedDB write below may still make it */ }
     }
     this.putBacktest(data).catch(() => { /* the tab is going away */ });
+  }
+
+  /** Each strategy's rules and what each version changed, kept next to the backtests. */
+  async getLibrary() { return cleanLibrary((await this.read()).library); }
+  async putLibrary(library) {
+    const all = await this.read();
+    all.library = cleanLibrary(library);
+    await this.write(all);
+    return { ok: true };
   }
 
   /** Move a backtest to another journal (online, its journal rows are made from it, so they follow). */

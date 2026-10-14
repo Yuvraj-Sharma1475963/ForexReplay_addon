@@ -5,6 +5,7 @@ import { drawingsBefore, rebuild } from "./backtest.js";
 import { loadRules as loadChallengeRules } from "./challenge.js";
 import { AdrPanel } from "./adrpanel.js";
 import { AnalyticsView } from "./analyticsview.js";
+import { StrategyView } from "./strategyview.js";
 import { Backtests } from "./backtestpanel.js";
 import { JournalPanel } from "./journalpanel.js";
 import { capture as captureChart } from "./screenshots.js";
@@ -1123,8 +1124,12 @@ async function boot() {
   setLayout(layoutTwo); // after the sessions are set up: the side chart copies their visibility
 
   // ------------------------------------------------------------ tabs
-  const tabViews = { chart: $("chart-view"), analytics: $("analytics-view"), data: $("data-view") };
+  const tabViews = { chart: $("chart-view"), strategies: $("strategies-view"), analytics: $("analytics-view"), data: $("data-view") };
   const analytics = new AnalyticsView($("analytics-view"), store);
+  const strategies = new StrategyView($("strategies-view"), store, {
+    onAnalytics: (journal, id) => { analytics.focusRun(journal, id); document.querySelector('[data-view="analytics"]').click(); },
+    onChart: (journal, id) => showBacktestTrades(journal, id),
+  });
   analytics.onShowTrade = async (journal, runId, tradeId) => {
     const problem = await showBacktestTrades(journal, runId, tradeId);
     if (problem) analytics.message(problem);
@@ -1135,6 +1140,10 @@ async function boot() {
       Object.entries(tabViews).forEach(([key, el]) => { el.hidden = key !== name; });
       document.querySelectorAll("[data-view]").forEach((t) => t.classList.toggle("active", t === tab));
       if (name === "data") redrawData();
+      if (name === "strategies") {
+        clock.pause();
+        (backtests.current ? backtests.save() : Promise.resolve()).then(() => strategies.open());
+      }
       if (name === "analytics") {
         clock.pause();
         // Save the replay on screen first, so its latest trades are in the journal being read.

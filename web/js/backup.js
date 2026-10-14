@@ -6,6 +6,7 @@
 // whole (actions, drawings, notes, trades), so an imported one can be resumed like any other.
 
 import { FORMAT_VERSION, validName } from "./backtest.js";
+import { mergeLibrary } from "./backtestmeta.js";
 
 export const BACKUP_FORMAT = "forexreplay-backtests";
 export const KEY_LAST_BACKUP = "forexreplay.lastBackup"; // ISO time of the last export, in localStorage
@@ -18,7 +19,8 @@ export async function exportBackup(store, now = new Date()) {
     if (b.error) continue; // a damaged file on disk: nothing to keep
     backtests.push(await store.getBacktest(b.journal, b.id));
   }
-  return { format: BACKUP_FORMAT, version: 1, exported: now.toISOString(), backtests };
+  const library = store.getLibrary ? await store.getLibrary() : { strategies: {} };
+  return { format: BACKUP_FORMAT, version: 1, exported: now.toISOString(), backtests, library };
 }
 
 /** Why a backtest from a file cannot be loaded, or "" if it can. */
@@ -42,7 +44,12 @@ export async function importBackup(store, file) {
     throw new Error("this is not a ForexReplay backup file");
   }
   const here = new Map((await store.listBacktests()).map((b) => [`${b.journal}/${b.id}`, b]));
-  const out = { added: 0, updated: 0, unchanged: 0, problems: [] };
+  const out = { added: 0, updated: 0, unchanged: 0, strategiesAdded: 0, problems: [] };
+  if (file.library && store.getLibrary) { // strategy rules and version notes: added where missing, never overwritten
+    const library = await store.getLibrary();
+    out.strategiesAdded = mergeLibrary(library, file.library);
+    await store.putLibrary(library);
+  }
   for (const b of file.backtests) {
     const problem = problemWith(b);
     if (problem) { out.problems.push(`${(b && (b.name || b.id)) || "?"}: ${problem}`); continue; }

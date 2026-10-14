@@ -39,6 +39,37 @@ export function autoName(b) {
   return [`${m.strategy}${m.strategyVersion ? ` ${m.strategyVersion}` : ""}`, periodText(b), b.timeframe || ""].filter(Boolean).join(" · ");
 }
 
+/**
+ * The strategy library: { strategies: { name: { rules, versions: { version: what changed } } } }.
+ * The same rules as forex_replay/backtests.py clean_library, so both stores keep the same shape.
+ */
+export function cleanLibrary(raw) {
+  const out = { strategies: {} };
+  const strategies = raw && typeof raw === "object" && raw.strategies && typeof raw.strategies === "object" ? raw.strategies : {};
+  for (const [name, entry] of Object.entries(strategies).slice(0, 500)) {
+    if (!name.trim() || name.length > 60 || !entry || typeof entry !== "object") continue;
+    const versions = entry.versions && typeof entry.versions === "object" ? entry.versions : {};
+    out.strategies[name] = {
+      rules: String(entry.rules || "").slice(0, 8000),
+      versions: Object.fromEntries(Object.entries(versions).slice(0, 100)
+        .filter(([v]) => typeof v === "string" && v.trim()).map(([v, t]) => [v.slice(0, 20), String(t || "").slice(0, 2000)])),
+    };
+  }
+  return out;
+}
+
+/** `incoming` library entries added to `library`; where both have text, the one here wins. Returns how many strategies were new. */
+export function mergeLibrary(library, incoming) {
+  let added = 0;
+  for (const [name, entry] of Object.entries(cleanLibrary(incoming).strategies)) {
+    const here = library.strategies[name];
+    if (!here) { library.strategies[name] = entry; added++; continue; }
+    if (!here.rules) here.rules = entry.rules;
+    for (const [v, text] of Object.entries(entry.versions)) if (!here.versions[v]) here.versions[v] = text;
+  }
+  return added;
+}
+
 /** Strategy names in use, most used first (for suggestions and filters). */
 export function strategiesIn(list) {
   const count = new Map();

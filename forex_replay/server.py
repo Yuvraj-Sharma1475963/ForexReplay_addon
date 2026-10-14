@@ -13,6 +13,8 @@ It also stores backtests for the app (see backtests.py):
     PUT    /api/backtests/<journal>/<id>     save it, and add its closed trades to the journal
     DELETE /api/backtests/<journal>/<id>     remove it (its journal rows stay)
     POST   /api/backtests/<journal>/<id>/move  {"to": journal}: move it, its rows and screenshots
+    GET    /api/library                      strategy rules and version notes
+    PUT    /api/library                      save them
     GET / PUT / DELETE /api/screenshots/<journal>/<name>.png   chart pictures for trades
     GET    /api/journals                     journal folders that have a trades.csv
     GET    /api/journal/<journal>            the rows of a journal, for the analytics page
@@ -98,6 +100,8 @@ class Handler(SimpleHTTPRequestHandler):
             self._backtest("GET")
         elif route.startswith("/api/screenshots/"):
             self._screenshot("GET")
+        elif route == "/api/library":
+            self._json(backtests.load_library(self.journals_root))
         elif route == "/api/journals":
             self._json({"journals": backtests.list_journals(self.journals_root)})
         elif route.startswith("/api/journal/"):
@@ -111,7 +115,12 @@ class Handler(SimpleHTTPRequestHandler):
             super().do_GET()
 
     def do_PUT(self):  # noqa: N802
-        if self.path.startswith("/api/screenshots/"):
+        if self.path.split("?")[0] == "/api/library":
+            try:
+                self._json(backtests.save_library(self._read_json(), self.journals_root))
+            except (backtests.BacktestError, ValueError) as err:
+                self._json({"error": str(err)}, 400)
+        elif self.path.startswith("/api/screenshots/"):
             self._screenshot("PUT")
         else:
             self._backtest("PUT")

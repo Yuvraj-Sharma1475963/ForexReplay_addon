@@ -293,3 +293,16 @@ def test_server_moves_a_backtest():
         finally:
             server.shutdown()
             server.server_close()
+
+
+def test_the_strategy_library_keeps_rules_and_version_notes_and_drops_the_rest():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        assert backtests.load_library(root) == {"strategies": {}}
+        backtests.save_library({"strategies": {
+            "OB Retest": {"rules": "Enter on the retest of an order block", "versions": {"v1": "first", "v2": "London only"}, "extra": 1},
+            "": {"rules": "no name"}, "Bad": "not an entry"}, "other": True}, root)
+        assert backtests.load_library(root) == {"strategies": {
+            "OB Retest": {"rules": "Enter on the retest of an order block", "versions": {"v1": "first", "v2": "London only"}}}}
+        (root / backtests.LIBRARY_FILE).write_text("{damaged", encoding="utf-8")
+        assert backtests.load_library(root) == {"strategies": {}}
