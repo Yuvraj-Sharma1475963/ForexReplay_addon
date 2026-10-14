@@ -9,6 +9,7 @@ import {
   applyFilters, balanceCurve, breakdown, computeStats, dailyPnl, equityCurve, filterChoices, gaveBack, histogram, money, monthWeeks,
   parseRows, propCheck,
 } from "./analytics.js";
+import { groupOf, loadTagSets } from "./tagsets.js";
 
 const UP = "#089981", DOWN = "#f23645", LINE = "#2962ff", GRID = "#2e2e2e", MUTED = "#8c8c8c";
 const KEY_JOURNAL = "forexreplay.analytics.journal";
@@ -438,12 +439,28 @@ export class AnalyticsView {
       `<li><b>Losses that were +1R first:</b> ${g.reached} of ${g.known} losing trades with MFE recorded` +
       `${g.known < g.losers ? ` (${g.losers - g.known} older losses have none)` : ""}. ` +
       `${g.reached ? "A stop moved to breakeven at +1R would have turned these into scratches." : ""}</li>` +
+      this.mistakeLine(trades) +
       (challenges.length ? `<li><b>Challenge runs in this selection:</b> ${count("PASSED")} passed, ${count("FAILED")} failed, ${count("RUNNING")} unfinished.</li>` : "");
+  }
+
+  /** What trades tagged with a mistake (see tagsets.js) cost, against the rest. */
+  mistakeLine(trades) {
+    const sets = loadTagSets();
+    const bad = trades.filter((t) => t.tags.some((x) => groupOf(x, sets) === "mistake"));
+    if (!bad.length) return `<li><b>Mistakes:</b> no trade here is tagged with a mistake (${escapeHtml(sets.mistake.slice(0, 4).join(", "))}…). Tag them in the Journal box to see what they cost.</li>`;
+    const good = trades.filter((t) => !bad.includes(t));
+    const total = bad.reduce((s, t) => s + t.r, 0);
+    const exp = (list) => (list.length ? list.reduce((s, t) => s + t.r, 0) / list.length : NaN);
+    return `<li><b>Mistakes:</b> ${bad.length} of ${trades.length} trades are tagged with one, together <span class="${tone(total)}">${r2(total)}</span>. ` +
+      `Expectancy with them <span class="${tone(exp(bad))}">${r2(exp(bad))}</span>, without them <span class="${tone(exp(good))}">${r2(exp(good))}</span>.</li>`;
   }
 
   renderBreakdowns(trades) {
     const names = this.runNames();
+    const sets = loadTagSets();
+    const inGroup = (id, none) => (t) => { const tags = t.tags.filter((x) => groupOf(x, sets) === id); return tags.length ? tags : [none]; };
     const groups = [
+      ["Setup", inGroup("setup", "(no setup)")], ["Grade", inGroup("grade", "(no grade)")], ["Mistake", inGroup("mistake", "(no mistake)")],
       ["Session", "session"], ["Weekday", "weekday"], ["Side", "side"], ["Exit", "exitReason"],
       ["Tag", (t) => (t.tags.length ? t.tags : ["(no tag)"])], ["Run", "run"],
     ];

@@ -568,6 +568,15 @@ button.primary {
 .journal-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .chip { font-size: 11px; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; }
 .chip.on { border-color: var(--blue); color: #fff; background: rgba(41, 98, 255, 0.25); }
+.journal-tags { flex-direction: column; align-items: stretch; gap: 3px; }
+.tag-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.tag-group-label { width: 100%; font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-top: 3px; }
+.tag-input-row { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.tag-input-row input { flex: 1; min-width: 0; }
+.tags-dialog { width: min(560px, calc(100vw - 32px)); }
+.tags-dialog .field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; color: var(--muted); }
+.tags-dialog textarea { width: 100%; background: transparent; color: var(--text); border: 1px solid var(--gutter, var(--border)); border-radius: 6px; padding: 6px 8px; font: inherit; resize: vertical; }
+.tags-dialog textarea:focus { outline: 0; border-color: var(--blue); }
 .journal-shots { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin: 6px 0; }
 .journal-shots:empty { display: none; }
 .shot { position: relative; display: block; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }

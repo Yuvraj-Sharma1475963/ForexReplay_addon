@@ -316,7 +316,8 @@
       <div id="journal-editor" hidden>
         <textarea id="journal-note" rows="3" placeholder="Why you took it, what you saw, what you would do differently"></textarea>
         <div class="journal-tags" id="journal-tags"></div>
-        <input id="journal-tag-input" type="text" maxlength="24" autocomplete="off" placeholder="Your own tag, then Enter">
+        <div class="tag-input-row"><input id="journal-tag-input" type="text" maxlength="24" autocomplete="off" placeholder="Your own tag, then Enter">
+          <button class="plain small" id="journal-tag-lists" title="Change the setups, grades, mistakes and context tags offered">Edit tag lists</button></div>
         <div class="journal-shots" id="journal-shots"></div>
         <button class="plain small" id="journal-shot" title="Save a picture of the chart as it is now with this trade">&#128247; Add screenshot</button>
       </div>
@@ -502,6 +503,18 @@
       <button type="button" class="plain bordered" id="fib-cancel">Cancel</button>
       <button type="button" class="primary" id="fib-apply">Apply</button>
     </div>
+  </dialog>
+
+  <dialog id="tags-dialog" class="dialog tags-dialog">
+    <h2>Tag lists</h2>
+    <p class="muted">The tags offered for each trade, separated by commas. Using the same words every time lets Analytics group them:
+      By setup, By grade, and what mistakes cost. A trade has one grade at most. Tags already on trades are kept when you change these lists.</p>
+    <label class="field">Setup <textarea data-tagset="setup" rows="2"></textarea></label>
+    <label class="field">Grade <textarea data-tagset="grade" rows="1"></textarea></label>
+    <label class="field">Mistake <textarea data-tagset="mistake" rows="2"></textarea></label>
+    <label class="field">Context <textarea data-tagset="context" rows="2"></textarea></label>
+    <div class="dialog-actions"><button type="button" class="plain small" id="tags-reset">Back to the suggested lists</button><span class="spacer"></span>
+      <button type="button" class="plain bordered" id="tags-close">Cancel</button> <button type="button" class="plain primary" id="tags-save">Save</button></div>
   </dialog>
 
   <dialog id="shortcuts-dialog" class="dialog">

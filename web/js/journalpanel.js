@@ -4,6 +4,7 @@
 // every candle, so typing a note is not interrupted while the replay plays.
 
 import { MAX_NOTE } from "./tradenotes.js";
+import { canonicalTag, GROUPS, groupOf, loadTagSets, saveTagSets, setsToText, textToList } from "./tagsets.js";
 
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const KEY_AUTO = "forexreplay.autoscreenshots";
@@ -33,17 +34,19 @@ export class JournalPanel {
       this.typing = setTimeout(() => { this.typing = null; if (id === this.id) this.saveNote(); }, 400);
     });
     this.noteBox.addEventListener("blur", () => this.saveNote());
+    this.sets = loadTagSets();
     this.el("journal-tags").addEventListener("click", (event) => {
       const chip = event.target.closest("[data-tag]");
-      if (chip && this.id !== null) this.notes.toggleTag(this.id, chip.dataset.tag);
+      if (chip && this.id !== null) this.toggle(chip.dataset.tag);
     });
     this.el("journal-tag-input").addEventListener("keydown", (event) => {
       if (event.key !== "Enter" || this.id === null) return;
       event.preventDefault();
-      const tag = event.target.value;
-      if (this.notes.get(this.id).tags.includes(tag.trim())) { event.target.value = ""; return; }
-      if (this.notes.toggleTag(this.id, tag)) event.target.value = "";
+      const tag = canonicalTag(event.target.value, this.sets, this.notes.tagChoices()); // "ob retest" becomes "OB retest"
+      event.target.value = "";
+      if (tag && !this.notes.get(this.id).tags.includes(tag)) this.toggle(tag);
     });
+    this.setupTagLists();
     this.el("journal-shot").addEventListener("click", () => { if (this.id !== null) onScreenshot(this.id); });
     this.el("journal-shots").addEventListener("click", (event) => {
       const x = event.target.closest("[data-remove]");
@@ -102,8 +105,10 @@ export class JournalPanel {
     if (!title) return;
     const entry = this.notes.get(id);
     if (!keepText) this.noteBox.value = entry.note;
-    this.el("journal-tags").innerHTML = this.notes.tagChoices().concat(entry.tags.filter((t) => !this.notes.tagChoices().includes(t)))
-      .map((t) => `<button class="chip${entry.tags.includes(t) ? " on" : ""}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join("");
+    const chip = (t) => `<button class="chip${entry.tags.includes(t) ? " on" : ""}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</button>`;
+    const other = [...new Set([...this.notes.tagChoices(), ...entry.tags])].filter((t) => !groupOf(t, this.sets));
+    this.el("journal-tags").innerHTML = GROUPS.map((g) => `<div class="tag-group"><span class="tag-group-label">${g.label}${g.single ? " (one)" : ""}</span>${this.sets[g.id].map(chip).join("")}</div>`).join("") +
+      (other.length ? `<div class="tag-group"><span class="tag-group-label">Other</span>${other.map(chip).join("")}</div>` : "");
     const journal = this.journal();
     this.el("journal-shots").innerHTML = !journal ? "" : entry.screenshots.map((name) => {
       const url = this.store.screenshotUrl(journal, name);
@@ -112,5 +117,39 @@ export class JournalPanel {
         `<img src="${url}" alt="Chart at ${kind}" loading="lazy"><span>${kind}</span>` +
         `<b data-remove="${escapeHtml(name)}" title="Remove this screenshot">&times;</b></a>`;
     }).join("");
+  }
+
+  /** Tag or untag the picked trade. A grade replaces the trade's other grade. */
+  toggle(tag) {
+    const id = this.id;
+    const group = GROUPS.find((g) => g.id === groupOf(tag, this.sets));
+    const on = this.notes.get(id).tags.includes(tag);
+    if (group && group.single && !on) {
+      for (const t of this.notes.get(id).tags) if (groupOf(t, this.sets) === group.id) this.notes.toggleTag(id, t);
+    }
+    this.notes.toggleTag(id, tag);
+  }
+
+  /** "Edit tag lists": the four lists, comma separated. */
+  setupTagLists() {
+    const dialog = document.getElementById("tags-dialog");
+    if (!dialog) return;
+    const open = this.el("journal-tag-lists");
+    open.addEventListener("click", () => {
+      const text = setsToText(this.sets);
+      for (const g of GROUPS) dialog.querySelector(`[data-tagset="${g.id}"]`).value = text[g.id];
+      dialog.showModal();
+    });
+    dialog.querySelector("#tags-save").addEventListener("click", () => {
+      const raw = Object.fromEntries(GROUPS.map((g) => [g.id, textToList(dialog.querySelector(`[data-tagset="${g.id}"]`).value)]));
+      this.sets = saveTagSets(raw);
+      dialog.close();
+      if (this.id !== null) this.render(true);
+    });
+    dialog.querySelector("#tags-reset").addEventListener("click", () => {
+      const text = setsToText(saveTagSets(null));
+      for (const g of GROUPS) dialog.querySelector(`[data-tagset="${g.id}"]`).value = text[g.id];
+    });
+    dialog.querySelector("#tags-close").addEventListener("click", () => dialog.close());
   }
 }
