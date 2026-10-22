@@ -287,6 +287,7 @@ export class DrawingLayer {
 
   // ----- mouse ------------------------------------------------------------------------
   handleDown(event) {
+    if (event.target.closest && event.target.closest(".chart-nav")) return; // the zoom and scroll buttons
     if (event.button !== 0 || this.view.drag) return; // a trade line is being dragged
     if (this.editing) return; // the click that closes the text box (it keeps the text on blur)
     const at = this.pointAt(event, false, !!this.tool || event.shiftKey);

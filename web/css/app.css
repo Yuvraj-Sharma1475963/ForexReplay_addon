@@ -856,6 +856,20 @@ button.primary, .order-place { border-radius: var(--radius); }
 .cv-tick { position: absolute; top: 0; transform: translateX(-50%); font-size: 10.5px; color: var(--muted); white-space: nowrap; }
 .cv-tick::before { content: ""; position: absolute; left: 50%; top: -20px; height: 18px; border-left: 1px dashed #2a2a2a; }
 
+/* zoom, scroll and reset buttons at the bottom of a chart, shown on hover (TradingView's navigation bar) */
+.chart-nav {
+  position: absolute; z-index: 6; transform: translateX(-50%); display: flex; align-items: center; gap: 4px;
+  opacity: 0; pointer-events: none; transition: opacity 0.15s;
+}
+.chart:hover .chart-nav, .chart-nav:focus-within { opacity: 1; pointer-events: auto; }
+.chart-nav .gap { width: 6px; }
+.chart-nav button {
+  width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; padding: 0; cursor: pointer;
+  background: rgba(42, 42, 42, 0.85); color: #dbdbdb; border: 0; border-radius: 4px;
+}
+.chart-nav button:hover { background: #3a3a3a; color: #fff; }
+.chart-nav svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
 /* thin dark scrollbars, as on TradingView */
 * { scrollbar-width: thin; scrollbar-color: #3a3a3a transparent; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }

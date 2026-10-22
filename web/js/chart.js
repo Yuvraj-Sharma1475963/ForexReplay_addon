@@ -476,6 +476,7 @@ export class ChartView {
       this.onCrosshairTime(null);
     });
     container.addEventListener("mouseenter", () => { this.mouseInside = true; });
+    this.buildNav();
     this.moveDrag = (event) => this.continueDrag(event);
     this.endDrag = (event) => this.finishDrag(event);
   }
@@ -507,6 +508,7 @@ export class ChartView {
   }
 
   startDrag(event) {
+    if (event.target.closest && event.target.closest(".chart-nav")) return; // the zoom and scroll buttons
     if (event.button !== 0 || this.drag || this.toolActive) return; // a drawing tool is waiting for its clicks
     const hit = this.lineAt(event);
     if (!hit) return;
@@ -862,6 +864,55 @@ export class ChartView {
     const bars = Math.max(this.visibleBarCount(), span + 30);
     const from = i0 - Math.round((bars - span) / 2);
     this.chart.timeScale().setVisibleLogicalRange({ from, to: from + bars });
+  }
+
+  // ----- the buttons at the bottom: zoom, scroll, reset (as on TradingView) ----------------
+  /** − + ‹ › ⟲ at the bottom of the chart, shown while the mouse is over it. */
+  buildNav() {
+    const icon = (path) => `<svg viewBox="0 0 24 24" aria-hidden="true">${path}</svg>`;
+    const nav = document.createElement("div");
+    nav.className = "chart-nav";
+    nav.innerHTML = [
+      ["out", "Zoom out", icon('<path d="M6 12h12"/>')],
+      ["in", "Zoom in", icon('<path d="M6 12h12M12 6v12"/>')],
+      ["left", "Scroll left", icon('<path d="M14.5 6l-6 6 6 6"/>')],
+      ["right", "Scroll right", icon('<path d="M9.5 6l6 6-6 6"/>')],
+      ["reset", "Reset chart view: the latest candles, prices fitted to the screen", icon('<path d="M5 12a7 7 0 1 0 2.1-5M5 4v4h4"/>')],
+    ].map(([act, title, svg], i) => `${i === 2 || i === 4 ? '<span class="gap"></span>' : ""}<button type="button" data-nav="${act}" title="${title}" aria-label="${title}">${svg}</button>`).join("");
+    nav.addEventListener("click", (event) => {
+      const b = event.target.closest("button[data-nav]");
+      if (b) this.navigate(b.dataset.nav);
+    });
+    nav.addEventListener("dblclick", (event) => event.stopPropagation()); // not a double-click on the chart
+    this.container.append(nav);
+    this.nav = nav;
+    const place = () => { // centred under the candles (not the price axis), just above the time axis
+      const axis = this.chart.priceScale("right").width();
+      nav.style.left = `${(this.container.clientWidth - axis) / 2}px`;
+      nav.style.bottom = `${this.chart.timeScale().height() + 12}px`;
+    };
+    this.container.addEventListener("mouseenter", place);
+    place();
+  }
+
+  /** One press of a bottom button. Zoom keeps the right edge where it is, as TradingView does. */
+  navigate(action) {
+    if (!this.candles) return;
+    const scale = this.chart.timeScale();
+    const range = scale.getVisibleLogicalRange();
+    if (!range) return;
+    const width = range.to - range.from;
+    if (action === "in" || action === "out") {
+      const next = Math.max(10, Math.min(this.candles.length + 200, width * (action === "in" ? 0.8 : 1.25)));
+      scale.setVisibleLogicalRange({ from: range.to - next, to: range.to });
+    } else if (action === "left" || action === "right") {
+      const step = Math.max(1, Math.round(width / 8)) * (action === "left" ? -1 : 1);
+      scale.setVisibleLogicalRange({ from: range.from + step, to: range.to + step });
+    } else if (action === "reset") {
+      this.jumpMark.set(null);
+      this.chart.priceScale("right").applyOptions({ autoScale: true }); // prices fitted again after a manual stretch
+      this.showEndingAt(this.candles.length - 1, DEFAULT_VISIBLE_BARS);
+    }
   }
 
   goToLatest() {
