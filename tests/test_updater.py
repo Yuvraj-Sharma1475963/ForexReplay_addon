@@ -90,3 +90,54 @@ def test_the_mt5_daily_file_wins_over_other_exports():
             write_export(candles("2026-09-07 00:00", 2), data / name)
         order = [p.name for p in datapipe.find_exports(data)]
         assert order[0] == FILL_FILE and order[-1] == AUTO_FILE
+
+
+def test_run_update_does_one_click_and_never_raises():
+    from forex_replay.updater import run_update
+    with tempfile.TemporaryDirectory() as tmp:
+        data = export_dir(tmp)
+        monday = candles("2026-09-14 00:00", 24, price=1.2277)
+        fake = lambda source, data_dir: update(source, data_dir=data_dir, mt5_fetch=lambda since: (monday, pd.Timestamp("2026-09-14 02:00"), "EURUSD"))
+        pushed = []
+        result = run_update("mt5", push_to_github=True, data_dir=data, out_root=Path(tmp) / "web", updater=fake,
+                            pusher=lambda d, message: pushed.append(message) or "pushed to GitHub")
+        assert result["ok"] and result["added"] == 24 and result["last"] == "2026-09-14T01:55:00"
+        assert "pushed to GitHub" in result["text"] and pushed[0].startswith("Data: EURUSD M5 to 14 Sep 2026 01:55")
+
+        def broken(source, data_dir):
+            raise RuntimeError("MT5 is not reachable (Authorization failed)")
+        failed = run_update("mt5", data_dir=data, updater=broken)
+        assert not failed["ok"] and "Authorization failed" in failed["text"]
+
+
+def test_the_update_button_route_takes_json_only_and_one_at_a_time(monkeypatch):
+    import json
+    import threading
+    import urllib.error
+    import urllib.request
+    from forex_replay import server, updater
+    from forex_replay.server import make_server
+
+    calls = []
+    monkeypatch.setattr(updater, "run_update", lambda push_to_github=False: calls.append(push_to_github) or {"ok": True, "added": 3, "last": None, "text": "done"})
+    with tempfile.TemporaryDirectory() as tmp:
+        srv = make_server(port=18815, root=Path(tmp), journals_root=Path(tmp) / "strategies")
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        url = f"http://127.0.0.1:{srv.server_address[1]}/api/update"
+        post = lambda ctype: urllib.request.urlopen(urllib.request.Request(url, data=json.dumps({"push": True}).encode(), method="POST", headers={"Content-Type": ctype}))
+        try:
+            with post("application/json") as r:
+                assert json.loads(r.read())["added"] == 3 and calls == [True]
+            with pytest.raises(urllib.error.HTTPError) as refused:  # a form on another site cannot start one
+                post("text/plain")
+            assert refused.value.code == 400
+            server._update_lock.acquire()
+            try:
+                with pytest.raises(urllib.error.HTTPError) as busy:
+                    post("application/json")
+                assert busy.value.code == 409
+            finally:
+                server._update_lock.release()
+        finally:
+            srv.shutdown()
+            srv.server_close()

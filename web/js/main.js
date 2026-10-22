@@ -1042,6 +1042,45 @@ async function boot() {
     document.querySelector('[data-view="analytics"]').click();
   });
   $("backtests-open").addEventListener("click", () => { clock.pause(); backtests.open(); });
+
+  // ------------------------------------------------------------ Update data (only when clicked)
+  const updateDialog = $("update-dialog");
+  const online = store.kind === "browser";
+  $("update-local").hidden = online;
+  $("update-online").hidden = !online;
+  $("update-run").hidden = online;
+  if (online) { // the site lives at <owner>.github.io/<repo>/: its Data update workflow
+    const owner = location.hostname.split(".")[0];
+    const repo = location.pathname.split("/").filter(Boolean)[0] || "";
+    $("update-github").href = `https://github.com/${owner}/${repo}/actions/workflows/data-update.yml`;
+  }
+  const updateLog = (text, tone = "") => { const log = $("update-log"); log.hidden = !text; log.textContent = text; log.className = `update-log ${tone}`; };
+  $("data-update-open").addEventListener("click", () => {
+    clock.pause();
+    updateLog("");
+    $("update-reload").hidden = true;
+    updateDialog.showModal();
+  });
+  $("update-close").addEventListener("click", () => updateDialog.close());
+  $("update-run").addEventListener("click", async () => {
+    const run = $("update-run");
+    run.disabled = true;
+    run.textContent = "Updating…";
+    updateLog("Reading the newest candles from MetaTrader 5 and checking them. This takes a few seconds…");
+    try {
+      const result = await store.updateData($("update-push").checked);
+      updateLog(result.text, result.ok ? "ok" : "bad");
+      $("update-reload").hidden = !(result.ok && result.added > 0);
+    } catch (err) {
+      updateLog(`Could not update: ${err.message}${err.message.includes("fetch") ? " (is the app's server running?)" : ""}`, "bad");
+    }
+    run.disabled = false;
+    run.textContent = "Update now";
+  });
+  $("update-reload").addEventListener("click", async () => {
+    if (backtests.current) await backtests.save(); // a replay on screen is saved first; resume it from Backtests
+    location.reload();
+  });
   window.addEventListener("pagehide", () => backtests.saveOnUnload());
   renderReplayUi();
   refreshTrading();

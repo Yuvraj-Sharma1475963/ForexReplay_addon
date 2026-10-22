@@ -13,6 +13,7 @@ It also stores backtests for the app (see backtests.py):
     PUT    /api/backtests/<journal>/<id>     save it, and add its closed trades to the journal
     DELETE /api/backtests/<journal>/<id>     remove it (its journal rows stay)
     POST   /api/backtests/<journal>/<id>/move  {"to": journal}: move it, its rows and screenshots
+    POST   /api/update                       {"push": bool}: newest candles from MT5 (or Yahoo), checked, rebuilt
     GET    /api/library                      strategy rules and version notes
     PUT    /api/library                      save them
     GET / PUT / DELETE /api/screenshots/<journal>/<name>.png   chart pictures for trades
@@ -85,6 +86,9 @@ def ensure_chart_library() -> str | None:
     return version
 
 
+_update_lock = threading.Lock()  # one market data update at a time
+
+
 class Handler(SimpleHTTPRequestHandler):
     extensions_map = {**SimpleHTTPRequestHandler.extensions_map, **MIME_TYPES}
     journals_root = JOURNALS_DIR
@@ -126,6 +130,9 @@ class Handler(SimpleHTTPRequestHandler):
             self._backtest("PUT")
 
     def do_POST(self):  # noqa: N802
+        if self.path.split("?")[0] == "/api/update":
+            self._update()
+            return
         parts = self.path.split("?")[0].split("/")  # ['', 'api', 'backtests', journal, id, 'move']
         if len(parts) != 6 or parts[:3] != ["", "api", "backtests"] or parts[5] != "move":
             self._json({"error": "Not found."}, 404)
@@ -137,6 +144,22 @@ class Handler(SimpleHTTPRequestHandler):
             self._json({"error": str(err)}, 404)
         except (backtests.BacktestError, ValueError) as err:
             self._json({"error": str(err)}, 400)
+
+    def _update(self) -> None:
+        """The "Update data" button: one update at a time; a second click while one runs is told so."""
+        try:
+            body = self._read_json()  # JSON only, so a form on another site cannot start one
+        except (backtests.BacktestError, ValueError) as err:
+            self._json({"error": str(err)}, 400)
+            return
+        if not _update_lock.acquire(blocking=False):
+            self._json({"error": "An update is already running."}, 409)
+            return
+        try:
+            from . import updater
+            self._json(updater.run_update(push_to_github=bool(isinstance(body, dict) and body.get("push"))))
+        finally:
+            _update_lock.release()
 
     def do_DELETE(self):  # noqa: N802
         if self.path.startswith("/api/screenshots/"):

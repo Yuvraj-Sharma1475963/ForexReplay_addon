@@ -47,7 +47,7 @@ pip install -r requirements.txt
 python -m forex_replay app        # or double-click start_app.bat on Windows
 ```
 
-**Daily data update.** `update_data.bat` (Windows Task Scheduler, every evening) adds the newest EURUSD M5 candles from MetaTrader 5, checks them and pushes them to GitHub; a nightly GitHub job fills any missing hours from Yahoo Finance. Run it by hand with `python -m forex_replay update` (see [decision 0018](docs/decisions/0018-daily-data-update.md)).
+**Market data update.** Click **Update data** in the app: the newest EURUSD M5 candles from MetaTrader 5 on this computer are checked, added and pushed to GitHub, so the website gets them too. Nothing runs on a schedule. Without the app: `python -m forex_replay update --push` or `update_data.bat`; online, GitHub Actions → Data update → Run workflow fills the missing hours from Yahoo Finance (see [decision 0018](docs/decisions/0018-daily-data-update.md)).
 
 It opens `http://127.0.0.1:8765`. The first start builds the browser's market data from the MT5 export in `data/` (EURUSD M5, 1 Aug 2025 to 11 Sep 2026, 82,569 candles).
 

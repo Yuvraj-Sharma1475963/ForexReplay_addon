@@ -45,6 +45,7 @@
       <button id="replay-live" title="Return to where the replay had got to (End)" hidden>Live &#8677;</button>
       <button id="replay-exit" title="Save this backtest and leave the replay">&#10005;</button>
     </div>
+    <button class="plain" id="data-update-open" title="Update the market data: the newest candles from MetaTrader 5, checked, then sent to GitHub"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M4 17v2.5h16V17"/></svg><span>Update data</span></button>
     <button class="plain" id="backtests-open" title="Saved backtests: rename, filter, analytics, chart, resume or delete"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg><span>Backtests</span></button>
     <div class="divider"></div>
     <div class="group tabs" aria-label="View">
@@ -517,6 +518,29 @@
     <label class="field">Context <textarea data-tagset="context" rows="2"></textarea></label>
     <div class="dialog-actions"><button type="button" class="plain small" id="tags-reset">Back to the suggested lists</button><span class="spacer"></span>
       <button type="button" class="plain bordered" id="tags-close">Cancel</button> <button type="button" class="plain primary" id="tags-save">Save</button></div>
+  </dialog>
+
+  <dialog id="update-dialog" class="dialog update-dialog">
+    <h2>Update market data</h2>
+    <div id="update-local">
+      <p class="muted">Reads the newest EURUSD 5-minute candles from MetaTrader 5 on this computer (keep it logged in, with the
+        password saved), checks them, rebuilds the chart data and sends them to GitHub, so the website gets them too.
+        If MT5 cannot be reached, the missing hours come from Yahoo Finance instead. Nothing runs until you click.</p>
+      <label class="check-label"><input type="checkbox" id="update-push" checked> Also send them to GitHub (the website updates a few minutes later)</label>
+    </div>
+    <div id="update-online" hidden>
+      <p class="muted">The website cannot reach MetaTrader 5 on your computer. Two ways to get new candles here:</p>
+      <ol class="muted">
+        <li>On your computer, open the app (<code>start_app.bat</code>) and click <b>Update data</b> there: MT5's candles are sent to GitHub and this website gets them a few minutes later.</li>
+        <li>Or let GitHub fill the missing hours from Yahoo Finance: open the link below, click <b>Run workflow</b>, then reload this page in a few minutes.</li>
+      </ol>
+      <p><a id="update-github" href="#" target="_blank" rel="noopener">Open GitHub: Data update</a></p>
+    </div>
+    <pre class="update-log" id="update-log" hidden></pre>
+    <div class="dialog-actions"><span class="spacer"></span>
+      <button type="button" class="plain bordered" id="update-close">Close</button>
+      <button type="button" class="plain bordered" id="update-reload" hidden>Reload chart with the new candles</button>
+      <button type="button" class="plain primary" id="update-run">Update now</button></div>
   </dialog>
 
   <dialog id="shortcuts-dialog" class="dialog">

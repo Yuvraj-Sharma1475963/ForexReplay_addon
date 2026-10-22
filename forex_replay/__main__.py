@@ -94,20 +94,12 @@ def cmd_data(args) -> None:
 
 
 def cmd_update(args) -> None:
-    from .datapipe import DATA_DIR, build, summary
-    from .updater import describe, push, update
+    from .updater import run_update
 
-    try:
-        result = update(source=args.source)
-    except RuntimeError as err:
-        print(f"Not updated: {err}")
+    result = run_update(source=args.source, push_to_github=args.push)
+    print(result["text"])
+    if not result["ok"]:
         sys.exit(1)
-    print(describe(result))
-    manifest, report = build()  # the web data again, and a last check of every candle
-    print(summary(manifest, report))
-    if args.push:
-        last = result["last"].strftime("%d %b %Y %H:%M") if result["last"] is not None else "?"
-        print(push(DATA_DIR, f"Data: EURUSD M5 to {last} server time ({result['source']})"))
 
 
 def cmd_site(args) -> None:

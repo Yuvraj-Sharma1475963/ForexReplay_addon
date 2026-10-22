@@ -99,6 +99,12 @@ export class ServerStore {
     } catch { /* the tab is going away */ }
   }
   deleteBacktest(journal, id) { return request(this.fetch, `api/backtests/${enc(journal)}/${enc(id)}`, { method: "DELETE" }); }
+  /** The "Update data" button: newest candles from MT5 (or Yahoo), checked and rebuilt; `push` sends them to GitHub. */
+  updateData(push) {
+    return request(this.fetch, "api/update", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ push: !!push }),
+    });
+  }
   /** Each strategy's rules and what each version changed (strategies/_library.json). */
   getLibrary() { return request(this.fetch, "api/library").then(cleanLibrary); }
   putLibrary(library) {

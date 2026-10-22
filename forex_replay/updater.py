@@ -1,4 +1,6 @@
-"""Daily market data update: new EURUSD M5 candles, checked, then kept with the other exports.
+"""Market data update on request: new EURUSD M5 candles, checked, then kept with the other exports.
+
+Nothing runs by itself: the "Update data" button in the app (POST /api/update) or this command does it.
 
     python -m forex_replay update                  MT5 if it can be reached, otherwise Yahoo
     python -m forex_replay update --source mt5     only the MT5 terminal on this computer
@@ -224,6 +226,29 @@ def describe(result: dict) -> str:
     lines = [f"{result['source']}: {result['added']} new candles, up to {last}.", f"Checks and fixes: {fixes}."]
     lines += result["notes"]
     return "\n".join(lines)
+
+
+def run_update(source: str = "auto", push_to_github: bool = False, data_dir: Path = DATA_DIR, out_root: Path | None = None,
+               updater=None, pusher=None) -> dict:
+    """Everything one click does: add the candles, rebuild the web data (checking every candle),
+    and optionally push. Returns {ok, added, last, text}; `text` is what to show. Never raises."""
+    from .datapipe import WEB_DATA_DIR, build, summary
+
+    try:
+        result = (updater or update)(source=source, data_dir=data_dir)
+    except RuntimeError as err:
+        return {"ok": False, "added": 0, "last": None, "text": f"Not updated: {err}"}
+    lines = [describe(result)]
+    try:
+        manifest, report = build(data_dir=data_dir, out_root=out_root or WEB_DATA_DIR)
+        lines.append(summary(manifest, report))
+    except (ValueError, FileNotFoundError) as err:
+        return {"ok": False, "added": result["added"], "last": None, "text": "\n".join(lines + [f"The data was not rebuilt: {err}"])}
+    if push_to_github:
+        last = result["last"].strftime("%d %b %Y %H:%M") if result["last"] is not None else "?"
+        lines.append((pusher or push)(data_dir, f"Data: EURUSD M5 to {last} server time ({result['source']})"))
+    last = result["last"].isoformat() if result["last"] is not None else None
+    return {"ok": True, "added": result["added"], "last": last, "text": "\n".join(lines)}
 
 
 # ----------------------------------------------------------------- GitHub

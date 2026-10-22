@@ -1,12 +1,11 @@
-# Nightly backup for the market data: if the computer did not add the day's candles from MT5,
-# fill them from Yahoo Finance (data/EURUSD_M5_yahoo_fill.csv, which every MT5 file beats), then
-# publish the website again. On a night when MT5 already added them, nothing changes.
+# Market data from Yahoo Finance, only when you start it: Actions -> Data update -> Run workflow
+# (the website's "Update data" window links here). It fills the candles after the last MT5 one
+# (data/EURUSD_M5_yahoo_fill.csv, which every MT5 file beats), then publishes the website again.
+# Nothing runs on a schedule.
 # Docs: docs/decisions/0018-daily-data-update.md
 name: Data update
 
 on:
-  schedule:
-    - cron: "30 22 * * 1-5" # 22:30 UTC Monday to Friday (04:00 India), after the New York close
   workflow_dispatch:
 
 permissions:

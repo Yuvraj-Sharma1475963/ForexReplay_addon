@@ -758,7 +758,7 @@ button.replay-start.active { color: var(--blue); }
 .goto input { background: transparent; border-color: var(--gutter); }
 .goto input:hover { border-color: #4a4a4a; }
 @media (max-width: 1600px) { /* a narrower bar keeps the icons and drops some words (the tooltips still say them) */
-  #sessions-toggle span, #layout-toggle span, #latest span, .goto-label { display: none; }
+  #sessions-toggle span, #layout-toggle span, #latest span, #data-update-open span, .goto-label { display: none; }
 }
 @media (max-width: 1200px) {
   #indicators-open span, #backtests-open span, #replay-toggle span { display: none; }
@@ -869,6 +869,16 @@ button.primary, .order-place { border-radius: var(--radius); }
 }
 .chart-nav button:hover { background: #3a3a3a; color: #fff; }
 .chart-nav svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* the Update data window */
+.update-dialog { width: min(560px, calc(100vw - 32px)); }
+.update-dialog ol { padding-left: 18px; line-height: 1.6; }
+.update-log {
+  white-space: pre-wrap; font: 12px/1.5 ui-monospace, Consolas, monospace; background: var(--bg); border: 1px solid var(--gutter, var(--border));
+  border-radius: 6px; padding: 8px 10px; margin: 10px 0 0; max-height: 220px; overflow: auto;
+}
+.update-log.ok { border-color: var(--up); }
+.update-log.bad { border-color: var(--down); }
 
 /* thin dark scrollbars, as on TradingView */
 * { scrollbar-width: thin; scrollbar-color: #3a3a3a transparent; }
