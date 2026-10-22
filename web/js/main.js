@@ -447,7 +447,8 @@ async function boot() {
   const layer = new LayerGroup({
     onToolChange: (tool) => {
       toolButtons.forEach((b) => b.classList.toggle("active", b.dataset.tool === (tool || "")));
-      const how = tool === "text" ? "click where the note goes, then type and press Enter"
+      const how = tool === "measure" ? "click the start, move the mouse, click again to keep it (Shift + click measures without this tool)"
+        : tool === "text" ? "click where the note goes, then type and press Enter"
         : TOOLS[tool]?.clicks === 2 ? "click the first point, then the second" : "click the chart at the price you want";
       setHint(!tool ? null : `${TOOLS[tool].label}: ${how}. Esc cancels.${layer && layer.magnet ? " Magnet on." : ""}`);
       if (tool && picking) setPicking(false);

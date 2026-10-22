@@ -16,6 +16,7 @@ export const SHORTCUTS = [
   { keys: "Alt + L", code: "KeyL", alt: true, action: "tool:long", label: "Long position" },
   { keys: "Alt + S", code: "KeyS", alt: true, action: "tool:short", label: "Short position" },
   { keys: "Alt + N", code: "KeyN", alt: true, action: "tool:text", label: "Text note" },
+  { keys: "Alt + Q", code: "KeyQ", alt: true, action: "tool:measure", label: "Measure (price change, pips, bars and time); Shift + click also measures" },
   { keys: "Alt + M", code: "KeyM", alt: true, action: "magnet", label: "Magnet on or off (pulls a point to a nearby open, high, low or close)" },
   { keys: "Ctrl + Z", code: "KeyZ", ctrl: true, action: "undo", label: "Undo the last drawing change" },
   { keys: "Ctrl + Y", code: "KeyY", ctrl: true, action: "redo", label: "Redo" },

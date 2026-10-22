@@ -12,9 +12,11 @@
 //  * Text: click where the note goes, type, press Enter. Double-click a note to change it.
 //  * Magnet: new points and dragged handles jump to the nearest open, high, low or close of
 //    the candle under the mouse. Holding Ctrl turns it the other way for that move.
+//  * Measure (the ruler, or Shift + click anywhere): click a start, move, click to freeze. It shows
+//    the price change, %, pips, bars and time, and is never saved. The next click or Esc removes it.
 
 import {
-  createDrawing, hit, layout, logicalToTime, MAX_TEXT, moveAll, moveHandle, PALETTE, positionLevel, snapPrice, timeToLogical, TOOLS,
+  createDrawing, hit, layout, logicalToTime, MAX_TEXT, measureLines, moveAll, moveHandle, PALETTE, positionLevel, snapPrice, timeToLogical, TOOLS,
 } from "./drawings.js";
 import { formatDateTime } from "./time.js";
 import { timeframe as timeframeInfo } from "./timeframes.js";
@@ -78,6 +80,7 @@ export class DrawingLayer {
     this.onStyleDefaults = onStyleDefaults || (() => {});
     this.editor = editor;
     this.editing = null; // { id } or { draft } while a text note is being typed
+    this.ruler = null; // { a, b, live } while measuring: points { time, price, logical }; live until the second click
     this.measure = document.createElement("canvas").getContext("2d");
     this.measure.font = NOTE_FONT;
 
@@ -224,6 +227,8 @@ export class DrawingLayer {
   setTool(tool) {
     this.tool = tool && TOOLS[tool] ? tool : null;
     this.draft = null;
+    // Picking a tool clears a finished measurement; switching tools off (Esc) drops one still following the mouse.
+    if (this.ruler && (this.tool || this.ruler.live)) this.ruler = null;
     this.view.toolActive = !!this.tool; // trade lines are not draggable while a tool is waiting for clicks
     if (this.tool) this.select(null);
     this.view.container.classList.toggle("tool-active", !!this.tool);
@@ -250,6 +255,7 @@ export class DrawingLayer {
 
   /** Esc: drop the drawing in progress, then the tool, then the selection. Returns true if there was anything to cancel. */
   cancel() {
+    if (this.ruler) { this.ruler = null; if (this.tool === "measure") this.setTool(null); this.redraw(); return true; }
     if (this.editing) { this.finishText(false); return true; }
     if (this.drag) { this.finishDrag(true); return true; }
     if (this.tool) { this.setTool(null); return true; }
@@ -283,8 +289,24 @@ export class DrawingLayer {
   handleDown(event) {
     if (event.button !== 0 || this.view.drag) return; // a trade line is being dragged
     if (this.editing) return; // the click that closes the text box (it keeps the text on blur)
-    const at = this.pointAt(event, false, !!this.tool);
+    const at = this.pointAt(event, false, !!this.tool || event.shiftKey);
     if (!at) return;
+
+    // The measure tool: a ruler on screen only. Shift + click starts one without picking the tool.
+    if (this.tool === "measure" || (event.shiftKey && !this.tool) || (this.ruler && this.ruler.live)) {
+      event.preventDefault();
+      event.stopPropagation();
+      const point = { time: at.time, price: at.price, logical: at.logical };
+      if (this.ruler && this.ruler.live) { // second click: freeze it
+        this.ruler = { ...this.ruler, b: point, live: false };
+        if (this.tool === "measure") this.setTool(null);
+      } else {
+        this.ruler = { a: point, b: point, live: true };
+      }
+      this.redraw();
+      return;
+    }
+    if (this.ruler) { this.ruler = null; this.redraw(); } // any other click puts a finished measurement away
 
     if (this.tool) {
       event.preventDefault();
@@ -335,6 +357,11 @@ export class DrawingLayer {
 
   handleHover(event) {
     if (this.drag) return;
+    if (this.ruler && this.ruler.live) {
+      const at = this.pointAt(event, true, true);
+      if (at) { this.ruler = { ...this.ruler, b: { time: at.time, price: at.price, logical: at.logical } }; this.redraw(); }
+      return;
+    }
     const at = this.pointAt(event, false, !!this.draft);
     if (this.draft) {
       if (at) {
@@ -467,6 +494,56 @@ export class DrawingLayer {
         }
       }
     }
+    if (this.ruler) this.paintRuler(ctx, proj);
     ctx.restore();
+  }
+
+  /** The measurement: a box from start to end, arrows across and up or down it, and the numbers under it. */
+  paintRuler(ctx, proj) {
+    const { a, b } = this.ruler;
+    const v = this.view;
+    const scale = v.chart.timeScale();
+    const xa = scale.logicalToCoordinate(a.logical), xb = scale.logicalToCoordinate(b.logical);
+    const ya = proj.y(a.price), yb = proj.y(b.price);
+    if (xa === null || xb === null) return;
+    const up = b.price >= a.price;
+    const rgb = up ? "41, 98, 255" : "242, 54, 69"; // blue up, red down, as on TradingView
+    const left = Math.min(xa, xb), right = Math.max(xa, xb), top = Math.min(ya, yb), bottom = Math.max(ya, yb);
+    ctx.fillStyle = `rgba(${rgb}, 0.18)`;
+    ctx.fillRect(left, top, right - left, bottom - top);
+    const arrow = (x1, y1, x2, y2) => {
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      if (len < 2) return;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      const ux = (x2 - x1) / len, uy = (y2 - y1) / len, s = Math.min(6, len / 2);
+      ctx.beginPath();
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - ux * s - uy * s * 0.6, y2 - uy * s + ux * s * 0.6);
+      ctx.lineTo(x2 - ux * s + uy * s * 0.6, y2 - uy * s - ux * s * 0.6);
+      ctx.closePath();
+      ctx.fill();
+    };
+    ctx.strokeStyle = ctx.fillStyle = `rgb(${rgb})`;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+    const midX = (left + right) / 2, midY = (top + bottom) / 2;
+    arrow(midX, ya, midX, yb); // up or down: the price change
+    arrow(xa, midY, xb, midY); // left to right: the time
+    const lines = measureLines(a, b, { digits: v.digits, pipPoints: this.pipPoints });
+    ctx.font = FONT;
+    const w = Math.max(...lines.map((t) => ctx.measureText(t).width)) + 16, h = 36;
+    let x = midX - w / 2, y = up ? top - h - 6 : bottom + 6; // beyond the end it points to
+    if (y < 2) y = bottom + 6;
+    if (y + h > this.paneHeight - 2) y = Math.max(2, top - h - 6);
+    x = Math.max(2, Math.min(x, this.paneWidth - w - 2));
+    ctx.fillStyle = `rgba(${rgb}, 0.92)`;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, w, h, 4); else ctx.rect(x, y, w, h);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(lines[0], x + w / 2, y + 15);
+    ctx.fillText(lines[1], x + w / 2, y + 29);
   }
 }

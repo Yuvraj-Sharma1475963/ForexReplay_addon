@@ -5,7 +5,8 @@ import { test } from "node:test";
 import { Candles } from "../js/data.js";
 import {
   cleanDrawing, cleanFibLevels, createDrawing, distanceToSegment, DrawingStore, FIB_LEVELS, fibPrice, handles, hit, layout,
-  logicalToTime, MAX_TEXT, moveAll, moveHandle, PALETTE, positionLevel, positionStats, snapPrice, timeToLogical, TOOLS, UNDO_LIMIT,
+  logicalToTime, MAX_TEXT, measureLines, moveAll, moveHandle, PALETTE, positionLevel, positionStats, snapPrice, spanText, timeToLogical, TOOLS,
+  UNDO_LIMIT,
 } from "../js/drawings.js";
 import { SHORTCUTS, shortcutFor } from "../js/shortcuts.js";
 import { aggregate, TimeframeView } from "../js/timeframes.js";
@@ -352,4 +353,17 @@ test("Fibonacci levels from a save are made safe; damaged ones fall back to the 
   const p = [{ time: T0, price: 110000 }, { time: T0 + 300, price: 110100 }];
   assert.deepEqual(cleanDrawing({ type: "fib", points: p, levels: [0.5, 1.272], ote: false }), { type: "fib", points: p, levels: [0.5, 1.272], ote: false });
   assert.deepEqual(cleanDrawing({ type: "fib", points: p, levels: ["x"], ote: "no" }), { type: "fib", points: p });
+});
+
+test("the measure tool: price change, %, pips, bars and time, and it is never saved", () => {
+  const a = { price: 108500, logical: 100, time: 1772701200 };
+  const up = measureLines(a, { price: 108623, logical: 118, time: 1772701200 + 18 * 900 }, { digits: 5, pipPoints: 10 });
+  assert.deepEqual(up, ["+0.00123 (+0.11%) +12.3 pips", "18 bars, 4h 30m"]);
+  const down = measureLines(a, { price: 108450, logical: 99, time: 1772701200 - 900 }, { digits: 5, pipPoints: 10 });
+  assert.deepEqual(down, ["−0.00050 (−0.05%) −5.0 pips", "1 bar, 15m"]);
+  assert.equal(spanText(0), "0m");
+  assert.equal(spanText(86400 + 4 * 3600 + 30 * 60), "1d 4h 30m");
+  assert.equal(spanText(2 * 86400), "2d");
+  assert.equal(TOOLS.measure.temporary, true);
+  assert.equal(cleanDrawing({ type: "measure", points: [{ time: 1, price: 1 }, { time: 2, price: 2 }] }), null);
 });

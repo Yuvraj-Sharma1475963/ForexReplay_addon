@@ -49,6 +49,7 @@ export const TOOLS = Object.freeze({
   long: { clicks: 1, label: "Long position", styled: false },
   short: { clicks: 1, label: "Short position", styled: false },
   text: { clicks: 1, label: "Text", styled: true },
+  measure: { clicks: 2, label: "Measure", styled: false, temporary: true }, // a ruler on screen only, never saved
 });
 
 /** Colours a drawing may have (the first is the default), and its line styles. */
@@ -363,10 +364,39 @@ export function hit(shape, x, y, { tolerance = 5, withHandles = false } = {}) {
   return null;
 }
 
+// ----- the measure tool ------------------------------------------------------------
+/** "1d 4h 30m", "45m", "0m": a time span in seconds, largest units first, zeros left out. */
+export function spanText(seconds) {
+  let s = Math.round(Math.abs(seconds) / 60) * 60;
+  const parts = [];
+  for (const [unit, size] of [["d", 86400], ["h", 3600], ["m", 60]]) {
+    const n = Math.floor(s / size);
+    if (n) parts.push(`${n}${unit}`);
+    s -= n * size;
+  }
+  return parts.join(" ") || "0m";
+}
+
+/**
+ * What the measure tool says between two points { price (points), logical, time }, as TradingView does:
+ * the price change, its percent and pips, then the bars and the time between them.
+ * `digits` and `pipPoints` describe the symbol (EURUSD: 5 and 10).
+ */
+export function measureLines(a, b, { digits, pipPoints }) {
+  const change = b.price - a.price;
+  const sign = change > 0 ? "+" : change < 0 ? "−" : "";
+  const percent = a.price ? (Math.abs(change) / a.price) * 100 : 0;
+  const bars = Math.round(Math.abs(b.logical - a.logical));
+  return [
+    `${sign}${(Math.abs(change) / 10 ** digits).toFixed(digits)} (${sign}${percent.toFixed(2)}%) ${sign}${(Math.abs(change) / pipPoints).toFixed(1)} pips`,
+    `${bars} bar${bars === 1 ? "" : "s"}, ${spanText(b.time - a.time)}`,
+  ];
+}
+
 // ----- keeping them -----------------------------------------------------------
 /** A drawing read from storage, or null if it is damaged. Nothing unchecked ever reaches the chart. */
 export function cleanDrawing(raw) {
-  if (!raw || typeof raw !== "object" || !TOOLS[raw.type] || !Array.isArray(raw.points)) return null;
+  if (!raw || typeof raw !== "object" || !TOOLS[raw.type] || TOOLS[raw.type].temporary || !Array.isArray(raw.points)) return null;
   const count = ONE_POINT.has(raw.type) ? 1 : 2;
   if (raw.points.length !== count) return null;
   const points = [];
