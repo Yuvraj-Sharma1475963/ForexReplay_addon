@@ -1,0 +1,41 @@
+# Nightly backup for the market data: if the computer did not add the day's candles from MT5,
+# fill them from Yahoo Finance (data/EURUSD_M5_yahoo_fill.csv, which every MT5 file beats), then
+# publish the website again. On a night when MT5 already added them, nothing changes.
+# Docs: docs/decisions/0018-daily-data-update.md
+name: Data update
+
+on:
+  schedule:
+    - cron: "30 22 * * 1-5" # 22:30 UTC Monday to Friday (04:00 India), after the New York close
+  workflow_dispatch:
+
+permissions:
+  contents: write # commit the fill file
+  actions: write # start the Website workflow (a push made here does not start it by itself)
+
+concurrency:
+  group: data-update
+  cancel-in-progress: false
+
+jobs:
+  fill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-site.txt
+      - name: Fill missing candles from Yahoo Finance
+        run: python -m forex_replay update --source yahoo
+      - name: Commit, push and publish if anything changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$(git status --porcelain -- data)" ]; then echo "Nothing new: the data is up to date."; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- data/EURUSD_M5_yahoo_fill.csv
+          git commit -m "Data: Yahoo fill for the hours without an MT5 update"
+          git push
+          gh workflow run pages.yml --ref main

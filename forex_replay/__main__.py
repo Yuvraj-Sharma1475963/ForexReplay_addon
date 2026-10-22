@@ -93,6 +93,23 @@ def cmd_data(args) -> None:
     print(summary(manifest, report))
 
 
+def cmd_update(args) -> None:
+    from .datapipe import DATA_DIR, build, summary
+    from .updater import describe, push, update
+
+    try:
+        result = update(source=args.source)
+    except RuntimeError as err:
+        print(f"Not updated: {err}")
+        sys.exit(1)
+    print(describe(result))
+    manifest, report = build()  # the web data again, and a last check of every candle
+    print(summary(manifest, report))
+    if args.push:
+        last = result["last"].strftime("%d %b %Y %H:%M") if result["last"] is not None else "?"
+        print(push(DATA_DIR, f"Data: EURUSD M5 to {last} server time ({result['source']})"))
+
+
 def cmd_site(args) -> None:
     from .site import build_site
 
@@ -143,6 +160,12 @@ def build_parser() -> argparse.ArgumentParser:
     data = sub.add_parser("data", help="v2: rebuild market data from the MT5 exports in data/")
     data.add_argument("--start", default="2025-08-01", help="first UTC date to keep")
     data.set_defaults(func=cmd_data)
+
+    upd = sub.add_parser("update", help="v2: add the newest candles (MT5 on this computer, else Yahoo), checked")
+    upd.add_argument("--source", choices=["auto", "mt5", "yahoo"], default="auto",
+                     help="auto: MT5 if it can be reached, otherwise Yahoo Finance for the missing days")
+    upd.add_argument("--push", action="store_true", help="commit the data files and push them to GitHub (main only)")
+    upd.set_defaults(func=cmd_update)
 
     site = sub.add_parser("site", help="v2: build the app as a static website (backtests saved in the browser)")
     site.add_argument("--out", default="_site", help="folder to write the website into")

@@ -28,3 +28,6 @@ strategies/*/screenshots/bt-*.png
 
 # The static website build (python -m forex_replay site)
 _site/
+
+# The daily data update's log (update_data.bat)
+data/update.log

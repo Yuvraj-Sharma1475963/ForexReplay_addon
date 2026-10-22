@@ -236,9 +236,15 @@ def reference_candles(df: pd.DataFrame, spec: SymbolSpec) -> dict:
 
 # ----------------------------------------------------------------- entry point
 def find_exports(data_dir: Path = DATA_DIR, symbol: str = "EURUSD", timeframe: str = "M5") -> list[Path]:
-    """Exports for a symbol/timeframe, oldest file first so newer exports win overlaps."""
+    """Exports for a symbol/timeframe, in the order they are merged: later files win overlaps.
+
+    The daily update's files have a fixed place (updater.py): the Yahoo fill first, so every real
+    export beats it, and the MT5 daily file last, so the broker's newest candles win. The exports
+    in between go oldest file first, as before.
+    """
     files = [p for p in data_dir.glob(f"{symbol}_{timeframe}*.csv")]
-    return sorted(files, key=lambda p: p.stat().st_mtime)
+    rank = lambda p: 0 if p.stem.endswith("_fill") else 2 if p.stem.endswith("_mt5_auto") else 1
+    return sorted(files, key=lambda p: (rank(p), p.stat().st_mtime))
 
 
 def build(start: str = "2025-08-01", spec: SymbolSpec = EURUSD, data_dir: Path = DATA_DIR,
