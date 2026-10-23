@@ -640,6 +640,9 @@ table.calendar td.week { background: var(--panel-2); }
 table.calendar .date { color: var(--muted); font-size: 12px; }
 table.calendar .amount { font-weight: 600; font-size: 13.5px; margin-top: 4px; }
 table.calendar .count { color: var(--muted); font-size: 11.5px; }
+table.calendar td.month-total { height: auto; padding: 10px 14px; font-size: 13px; background: var(--panel-2); }
+table.calendar td.month-total .amount { display: inline; font-size: 16px; margin: 0 4px; }
+table.calendar td.month-total .sep { color: var(--muted); margin: 0 4px; }
 
 /* ---------- day 12: two charts side by side ---------- */
 .chart-view.split #chart { right: 50%; }

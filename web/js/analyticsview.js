@@ -326,7 +326,32 @@ export class AnalyticsView {
       weeks.map((w) => `<tr>${w.days.map((d) => `<td class="${[d.inMonth ? "" : "out", cellTone(d.result)].join(" ").trim()}">` +
         `<div class="date">${Number(d.date.slice(8, 10))}</div>${result(d.result)}</td>`).join("")}` +
         `<td class="week ${cellTone(w.total)}">${w.total.trades ? result(w.total) : `<div class="count">no trades</div>`}</td></tr>`).join("") +
-      "</tbody>";
+      "</tbody>" + this.monthFooter(days, value);
+  }
+
+  /**
+   * The month's total under the calendar: only its own days (the greyed days of the months either
+   * side are not counted), with the trades, the green and red days, and the best and worst day.
+   */
+  monthFooter(days, value) {
+    const own = [...days].filter(([date, d]) => date.startsWith(this.month) && d.trades);
+    const total = { money: 0, r: 0, trades: 0, withMoney: 0 };
+    for (const [, d] of own) for (const k of Object.keys(total)) total[k] += d[k];
+    const label = `${new Date(`${this.month}-01T00:00:00Z`).toLocaleString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })} total`;
+    if (!total.trades) return `<tfoot><tr><td colspan="8" class="month-total"><b>${label}</b> <span class="muted">no trades</span></td></tr></tfoot>`;
+    const hasMoney = total.withMoney === total.trades;
+    const show = (d) => (d.withMoney === d.trades ? usd(d.money) : r2(d.r));
+    const green = own.filter(([, d]) => value(d) > 0).length, red = own.filter(([, d]) => value(d) < 0).length;
+    const ranked = [...own].sort((a, b) => value(b[1]) - value(a[1]));
+    const day = ([date, d]) => `${Number(date.slice(8, 10))} ${escapeHtml(show(d))}`;
+    const t = hasMoney ? total.money : total.r;
+    return `<tfoot><tr><td colspan="8" class="month-total ${t > 0 ? "win" : t < 0 ? "loss" : ""}">
+      <b>${label}</b> <span class="amount ${tone(t)}">${escapeHtml(hasMoney ? usd(total.money) : r2(total.r))}</span>
+      ${hasMoney ? `<span class="muted">(${escapeHtml(r2(total.r))})</span>` : ""}
+      <span class="sep">·</span> ${total.trades} trade${total.trades === 1 ? "" : "s"}
+      <span class="sep">·</span> <span class="up">${green} green</span> / <span class="down">${red} red</span> day${own.length === 1 ? "" : "s"}
+      <span class="sep">·</span> best ${day(ranked[0])} <span class="sep">·</span> worst ${day(ranked[ranked.length - 1])}
+    </td></tr></tfoot>`;
   }
 
 
