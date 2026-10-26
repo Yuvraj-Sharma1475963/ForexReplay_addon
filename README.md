@@ -22,6 +22,7 @@ I built it to test my own session-based trading ideas honestly, with no hindsigh
 - An account in dollars: set any balance (click it), lot size from a risk %, commission ($4 per lot), partial closes, breakeven, close all.
 - **ADR plan:** ADR10 worked out once a day from completed daily candles, and your thresholds (sweep penetration, buffer, minimum stop, displacement, FVG size) as multiples of it, in pips; the ticket warns when a stop is under minStop or reward:risk under your floor.
 - **Prop-firm challenge mode:** profit target, daily loss limit and maximum loss, checked on every M5 candle at its worst price, with days starting at 17:00 New York.
+- **Funded account after a pass:** **Go funded** continues a passed challenge as a funded account from the candle it passed on: daily and maximum loss, payouts on request (every 14 days, 5 trading days, 90% split by default), leverage checked at 1:30, and the journey's net after the challenge fee in Analytics and Strategies ([decision 0019](docs/decisions/0019-funded-account.md)).
 
 **Drawing and analysis**
 - Trendline, ray, horizontal line and ray, vertical line, rectangle, Fibonacci with the OTE zone (0.618 to 0.79) and your own levels and extensions, long/short position tool, text notes. Drawings have colours, line styles, a magnet to candle prices, undo, and TradingView-style Alt shortcuts.
