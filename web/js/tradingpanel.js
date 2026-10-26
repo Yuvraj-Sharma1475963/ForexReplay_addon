@@ -99,8 +99,8 @@ export class TradingPanel {
     });
     // Challenge rules: chosen between replays, fixed for the length of one.
     this.el("challenge-presets").innerHTML = Object.entries(PRESETS)
-      .map(([id, p]) => `<button class="plain small" data-preset="${id}" title="${p.targetPercent}% target, ${p.dailyPercent}% daily, ${p.maxPercent}% max loss">${p.label}</button>`).join("");
-    const challengeInputs = { targetPercent: "challenge-target", dailyPercent: "challenge-daily", maxPercent: "challenge-max" };
+      .map(([id, p]) => `<button class="plain small" data-preset="${id}" title="${p.title || `${p.targetPercent}% target, ${p.dailyPercent}% daily, ${p.maxPercent}% max loss`}">${p.label}</button>`).join("");
+    const challengeInputs = { targetPercent: "challenge-target", dailyPercent: "challenge-daily", maxPercent: "challenge-max", fee: "challenge-fee", leverage: "challenge-leverage" };
     const setRules = (changes) => {
       const rules = cleanRules({ ...trading.challengeRules, ...changes });
       trading.challengeRules = rules;
@@ -114,8 +114,22 @@ export class TradingPanel {
     this.el("challenge-presets").addEventListener("click", (event) => {
       const button = event.target.closest("[data-preset]");
       if (!button) return;
-      const { targetPercent, dailyPercent, maxPercent } = PRESETS[button.dataset.preset];
-      setRules({ enabled: true, targetPercent, dailyPercent, maxPercent });
+      const { targetPercent, dailyPercent, maxPercent, fee = 0, leverage = 0, startingBalance } = PRESETS[button.dataset.preset];
+      setRules({ enabled: true, targetPercent, dailyPercent, maxPercent, fee, leverage });
+      if (startingBalance && !trading.clock.active) { // the account size is part of the preset
+        saveSettings(trading.updateSettings({ startingBalance }));
+        this.renderSettings();
+        this.render();
+      }
+    });
+    this.el("payout-request").addEventListener("click", () => {
+      try {
+        const p = trading.requestPayout();
+        this.say(`Payout of ${formatMoney(p.amount)}: ${formatMoney(p.toYou)} to you, ${formatMoney(p.toFirm)} to the firm. The balance is back at the start.`, "ok");
+      } catch (err) {
+        if (!(err instanceof InvalidOrder)) throw err;
+        this.say(err.message, "bad");
+      }
     });
     this.renderSettings();
     this.render();
@@ -291,16 +305,20 @@ export class TradingPanel {
     cell.title = cell.textContent;
   }
 
-  /** The challenge box: its rules before a replay; its progress during one. */
+  /** The challenge box: its rules before a replay; its progress during one (or a funded account's). */
   renderChallenge() {
     const t = this.trading;
     const inReplay = t.clock.active;
+    if (inReplay && t.funded) { this.renderFunded(); return; }
+    this.el("payout-row").hidden = true;
+    this.el("meter-target-label").textContent = "Profit target";
+    this.el("challenge-on").closest("label").lastChild.textContent = " Challenge mode";
     const c = inReplay ? t.challenge : null;
     const rules = c ? c.rules : cleanRules(t.challengeRules);
     const on = this.el("challenge-on");
     on.checked = c ? true : (!inReplay && rules.enabled);
     on.disabled = inReplay;
-    for (const [key, id] of [["targetPercent", "challenge-target"], ["dailyPercent", "challenge-daily"], ["maxPercent", "challenge-max"]]) {
+    for (const [key, id] of [["targetPercent", "challenge-target"], ["dailyPercent", "challenge-daily"], ["maxPercent", "challenge-max"], ["fee", "challenge-fee"], ["leverage", "challenge-leverage"]]) {
       const input = this.el(id);
       if (document.activeElement !== input) input.value = rules[key];
       input.disabled = inReplay;
@@ -338,6 +356,51 @@ export class TradingPanel {
       ? `Worst today ${formatMoney(s.worstToday)} · lowest equity ${formatMoney(s.lowestEquity)} · ${days}`
       : `${c.outcome === Outcome.PASSED ? "Passed" : "Failed"} on ${formatDateTime(c.endTime)} IST: ${c.reason}. ` +
         `Worst day ${formatMoney(s.worstDay)} · lowest equity ${formatMoney(s.lowestEquity)} · ${days}.`;
+  }
+
+  /** The same box during a funded run: losses against the limits, the payout cycle, and Request payout. */
+  renderFunded() {
+    const t = this.trading;
+    const f = t.funded;
+    const s = f.summary();
+    this.el("challenge-on").closest("label").lastChild.textContent = " Funded account";
+    const on = this.el("challenge-on");
+    on.checked = true;
+    on.disabled = true;
+    this.el("challenge-setup").hidden = true;
+    this.el("challenge-meters").hidden = false;
+    const state = this.el("challenge-state");
+    state.textContent = f.running ? "FUNDED" : "LOST";
+    state.className = `challenge-state ${f.running ? "funded" : "lost"}`;
+    const meter = (id, fraction, text, tone = "") => {
+      const bar = this.el(id);
+      bar.style.width = `${Math.max(0, Math.min(1, fraction)) * 100}%`;
+      bar.className = tone;
+      this.el(`${id}-text`).textContent = text;
+    };
+    const danger = (fraction) => (fraction >= 0.8 ? "danger" : "");
+    const now = t.m5.time[t.clock.furthest - 1];
+    const waited = Math.min(f.rules.cycleDays, f.daysInCycle(now));
+    this.el("meter-target-label").textContent = "Next payout";
+    meter("meter-target", waited / f.rules.cycleDays,
+      `day ${waited} of ${f.rules.cycleDays} · ${s.cycleTradingDays}/${f.rules.minTradingDays} trading days`, "good");
+    const equity = t.equity;
+    const today = Math.max(0, f.dayStartBalance - equity);
+    meter("meter-daily", today / f.dailyLimit, `${formatMoney(today)} of ${formatMoney(f.dailyLimit)}`, danger(today / f.dailyLimit));
+    const down = Math.max(0, f.start - equity);
+    const room = f.start - f.floor;
+    meter("meter-max", down / room, `${formatMoney(down)} of ${formatMoney(room)}`, danger(down / room));
+    const paid = s.payouts ? `${s.payouts} payout${s.payouts === 1 ? "" : "s"}: ${formatMoney(s.toYou)} to you` : "No payout yet";
+    this.el("challenge-detail").textContent = f.running
+      ? `${paid} · ${f.rules.splitPercent}% split · profit now ${formatSignedMoney(t.balance - f.start)}`
+      : `Lost on ${formatDateTime(f.endTime)} IST: ${f.reason}. ${paid}.`;
+    const why = f.running && t.clock.active
+      ? (t.blockedReason || f.payoutBlocked(now, { balance: t.balance, open: t.activeCount })) : "The account is lost.";
+    this.el("payout-row").hidden = false;
+    const button = this.el("payout-request");
+    button.disabled = !!why;
+    button.title = why || `Withdraw ${formatMoney(Math.max(0, t.balance - f.start))}: ${f.rules.splitPercent}% to you`;
+    this.el("payout-why").textContent = why || `Ready: ${formatMoney(t.balance - f.start)} above the start.`;
   }
 
   renderTicket() {

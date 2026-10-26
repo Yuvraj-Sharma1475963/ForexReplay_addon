@@ -79,7 +79,7 @@ export class ServerStore {
   constructor(fetchFn = fetch) {
     this.kind = "server";
     this.screenshots = true;
-    this.fetch = fetchFn;
+    this.fetch = (...args) => fetchFn(...args); // called on its own: window.fetch called as this.fetch(...) throws "Illegal invocation"
   }
 
   health() { return request(this.fetch, "api/health").catch(() => null); }
@@ -131,7 +131,7 @@ export class ServerStore {
 export const BROWSER_KEY = "forexreplay.store.v1"; // localStorage: the store itself (no IndexedDB, or before it was used)
 export const PENDING_KEY = "forexreplay.store.pending"; // localStorage: saves made as the tab closed, merged on the next read
 const SUMMARY = ["id", "name", "journal", "symbol", "startTime", "furthestTime", "created", "saved", "result", "settings", "challenge",
-  "timeframe", "strategy", "strategyVersion", "status", "notes", "archived"];
+  "timeframe", "strategy", "strategyVersion", "status", "notes", "archived", "stage", "parentId", "parentJournal"];
 
 const clean = (data) => (data && typeof data.backtests === "object" && data.backtests !== null ? data : { backtests: {} });
 

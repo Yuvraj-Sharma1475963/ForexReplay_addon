@@ -54,7 +54,7 @@ def path_for(journal: str, backtest_id: str, root: Path = JOURNALS_DIR) -> Path:
 def summary(data: dict) -> dict:
     """The fields the list in the app shows, without the action log and drawings."""
     keys = ("id", "name", "journal", "symbol", "startTime", "furthestTime", "created", "saved", "result", "settings", "challenge",
-            "timeframe", "strategy", "strategyVersion", "status", "notes", "archived")
+            "timeframe", "strategy", "strategyVersion", "status", "notes", "archived", "stage", "parentId", "parentJournal")
     return {key: data.get(key) for key in keys}
 
 

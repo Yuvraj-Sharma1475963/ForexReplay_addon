@@ -240,14 +240,20 @@
           <label title="Passed when the balance reaches this much above the start, with nothing open">Target %<input id="challenge-target" type="number" min="0.1" step="0.5"></label>
           <label title="Failed if equity falls this much (of the starting balance) below the day's starting balance">Daily loss %<input id="challenge-daily" type="number" min="0.1" step="0.5"></label>
           <label title="Failed if equity falls this much below the starting balance (a fixed floor)">Max loss %<input id="challenge-max" type="number" min="0.1" step="0.5"></label>
+          <label title="What the challenge costs: taken off the payouts in the results">Fee $<input id="challenge-fee" type="number" min="0" step="1"></label>
+          <label title="1:N. Orders needing more margin than is free are refused. 0 = no margin check">Leverage 1:<input id="challenge-leverage" type="number" min="0" step="1"></label>
         </div>
         <p class="muted small" id="challenge-note"></p>
       </div>
       <div class="challenge-meters" id="challenge-meters" hidden>
-        <div class="meter"><div class="meter-label"><span>Profit target</span><span id="meter-target-text"></span></div><div class="bar"><i id="meter-target" class="good"></i></div></div>
+        <div class="meter"><div class="meter-label"><span id="meter-target-label">Profit target</span><span id="meter-target-text"></span></div><div class="bar"><i id="meter-target" class="good"></i></div></div>
         <div class="meter"><div class="meter-label"><span>Daily loss</span><span id="meter-daily-text"></span></div><div class="bar"><i id="meter-daily"></i></div></div>
         <div class="meter"><div class="meter-label"><span>Max loss</span><span id="meter-max-text"></span></div><div class="bar"><i id="meter-max"></i></div></div>
         <p class="muted small" id="challenge-detail"></p>
+        <div class="payout-row" id="payout-row" hidden>
+          <button type="button" class="plain primary small" id="payout-request">Request payout</button>
+          <span class="muted small" id="payout-why"></span>
+        </div>
       </div>
     </section>
     <details class="adr-plan" id="adr-plan" open>
@@ -518,6 +524,25 @@
     <label class="field">Context <textarea data-tagset="context" rows="2"></textarea></label>
     <div class="dialog-actions"><button type="button" class="plain small" id="tags-reset">Back to the suggested lists</button><span class="spacer"></span>
       <button type="button" class="plain bordered" id="tags-close">Cancel</button> <button type="button" class="plain primary" id="tags-save">Save</button></div>
+  </dialog>
+
+  <dialog id="funded-dialog" class="dialog funded-dialog">
+    <h2>Go funded</h2>
+    <p class="muted" id="funded-about"></p>
+    <div class="challenge-rules funded-rules">
+      <label title="Lost if equity falls this much (of the starting balance) below the day's starting balance">Daily loss %<input data-funded="dailyPercent" type="number" min="0.1" step="0.5"></label>
+      <label title="Lost if equity falls this much below the starting balance (a fixed floor)">Max loss %<input data-funded="maxPercent" type="number" min="0.1" step="0.5"></label>
+      <label title="Your share of each payout">Profit split %<input data-funded="splitPercent" type="number" min="1" max="100" step="5"></label>
+      <label title="Days from the start, or from the last payout, before a payout can be requested">Payout every (days)<input data-funded="cycleDays" type="number" min="1" step="1"></label>
+      <label title="Days with a trade needed in that time">Min trading days<input data-funded="minTradingDays" type="number" min="0" step="1"></label>
+      <label title="1:N. Orders needing more margin than is free are refused. 0 = no margin check">Leverage 1:<input data-funded="leverage" type="number" min="0" step="1"></label>
+    </div>
+    <p class="muted small">A payout takes everything above the starting balance (your share is the split) and puts the balance back
+      at the start; the loss floor stays where it was. Request it with <b>Request payout</b> in the trading panel.</p>
+    <p class="order-message" id="funded-message"></p>
+    <div class="dialog-actions"><span class="spacer"></span>
+      <button type="button" class="plain bordered" id="funded-cancel">Cancel</button>
+      <button type="button" class="plain primary" id="funded-start">Start the funded account</button></div>
   </dialog>
 
   <dialog id="update-dialog" class="dialog update-dialog">

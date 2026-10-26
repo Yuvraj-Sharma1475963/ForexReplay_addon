@@ -29,8 +29,9 @@ export class Backtests {
    *   onResume(journal, id)  rebuilds and opens a saved backtest; returns its list of problems
    *   onAnalytics(journal, id)  opens the analytics page on that backtest alone
    *   onChart(journal, id)  draws its trades on the chart; resolves to an error text, or "" when shown
+   *   onGoFunded(backtest summary)  continues a passed challenge as a funded account
    */
-  constructor({ dialog, status, collect, onResume, onAnalytics, onChart, store }) {
+  constructor({ dialog, status, collect, onResume, onAnalytics, onChart, onGoFunded, store }) {
     this.store = store; // files on disk (desktop app) or this browser (online): see store.js
     if (store.kind === "browser") {
       dialog.querySelector("#backtests-about").textContent = "Online, each replay with a trade or a drawing is saved in this browser as you go, " +
@@ -43,6 +44,7 @@ export class Backtests {
     this.onResume = onResume;
     this.onAnalytics = onAnalytics || (() => {});
     this.onChart = onChart || (async () => "");
+    this.onGoFunded = onGoFunded || (() => {});
     this.current = null; // { id, name, journal, created, startTime, strategy, strategyVersion, status, notes, archived } of the run on screen
     this.everSaved = false;
     this.drawingsTouched = false;
@@ -144,12 +146,13 @@ export class Backtests {
 
   // ----- the run on screen ------------------------------------------------
   /** A new replay has started with its last candle at `startTime`. */
-  begin(startTime, symbol) {
+  begin(startTime, symbol, extra = null) {
     this.stopTimer();
     const meta = { ...this.newRun, status: "testing", notes: "", archived: false };
     this.current = {
       id: newId(), journal: this.journal, created: new Date().toISOString(), startTime, ...meta,
       name: autoName({ ...meta, startTime }) || `${symbol} from ${formatDateTime(startTime)}`,
+      ...(extra || {}), // a funded account: its stage, the challenge it continues, its journal, strategy and name
     };
     this.everSaved = false;
     this.drawingsTouched = false;
@@ -160,7 +163,8 @@ export class Backtests {
   continueWith(saved) {
     this.stopTimer();
     const { id, name, journal, created, startTime } = saved;
-    this.current = { id, name, journal, created, startTime, ...cleanMeta(saved) };
+    const link = Object.fromEntries(["stage", "parentId", "parentJournal"].filter((k) => saved[k] != null).map((k) => [k, saved[k]]));
+    this.current = { id, name, journal, created, startTime, ...cleanMeta(saved), ...link };
     this.everSaved = true;
     this.drawingsTouched = false;
     this.renderStatus(`resumed · saved ${new Date(saved.saved).toLocaleTimeString("en-IN")}`);
@@ -401,14 +405,38 @@ export class Backtests {
       <td>${escapeHtml(b.journal)}</td>
       <td class="nowrap">${formatDateTime(b.furthestTime)}</td>
       <td class="num">${trades}</td>
-      <td class="num ${tone}">${r.challenge ? `<span class="tag ${r.challenge.toLowerCase()}" title="Prop-firm challenge">${r.challenge === "RUNNING" ? "challenge" : r.challenge}</span> ` : ""}${(r.totalR || 0) >= 0 ? "+" : ""}${(r.totalR || 0).toFixed(2)}R · ${formatSignedMoney(r.money || 0)}</td>
+      <td class="num ${tone}">${this.stageTag(b)}${(r.totalR || 0) >= 0 ? "+" : ""}${(r.totalR || 0).toFixed(2)}R · ${formatSignedMoney(r.money || 0)}</td>
       <td class="nowrap muted">${b.saved ? new Date(b.saved).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : ""}</td>
       <td class="actions">
+        ${this.canGoFunded(b) ? `<button class="plain bordered small go-funded" data-go-funded="${key}" title="Continue this passed challenge as a funded account, from the candle it passed on">Go funded ▸</button>` : ""}
         <button class="plain small" data-analytics="${key}" title="Statistics, balance, calendar and trades of this backtest alone">Analytics</button>
         <button class="plain small" data-chart="${key}" title="Show this backtest's trades on the chart as long/short boxes">Chart</button>
         <button class="plain bordered small" data-resume="${key}"${running ? " disabled" : ""}>Resume</button>
         <button class="plain small" data-delete="${key}"${running ? " disabled" : ""}>Delete</button>
       </td></tr>`;
+  }
+
+  /** The prop-firm tag in the Result column: a challenge's outcome, or a funded account's payouts. */
+  stageTag(b) {
+    const r = b.result || {};
+    if (r.stage === "funded") {
+      const f = r.funded || { payouts: 0, toYou: 0 };
+      const lost = r.challenge === "FAILED";
+      return `<span class="tag ${lost ? "failed" : "passed"}" title="Funded account${lost ? ", lost" : ""}">${lost ? "LOST" : "FUNDED"} · ` +
+        `${f.payouts} payout${f.payouts === 1 ? "" : "s"} · ${formatSignedMoney(f.toYou).replace("+", "")} to you</span> `;
+    }
+    if (!r.challenge) return "";
+    const fee = r.fee ? ` · fee $${r.fee}` : "";
+    const funded = this.list.find((x) => x.parentId === b.id && x.parentJournal === b.journal);
+    return `<span class="tag ${r.challenge.toLowerCase()}" title="Prop-firm challenge${fee}${funded ? `; continued as "${escapeHtml(funded.name)}"` : ""}">` +
+      `${r.challenge === "RUNNING" ? "challenge" : r.challenge}${funded ? " → funded" : ""}</span> `;
+  }
+
+  /** A passed challenge (not itself funded) that has no funded account yet, and is not the run on screen. */
+  canGoFunded(b) {
+    const r = b.result || {};
+    return r.challenge === "PASSED" && r.stage !== "funded" && !this.isOnScreen(`${b.journal}/${b.id}`) &&
+      !this.list.some((x) => x.parentId === b.id && x.parentJournal === b.journal);
   }
 
   /** "OB Retest · v2 · Done · 05 Feb 2026 → 16 Apr 2026 · M15 · has notes" under the name. */
@@ -440,6 +468,10 @@ export class Backtests {
       const name = autoName({ ...b, strategy: form.querySelector("[name=strategy]").value, strategyVersion: form.querySelector("[name=strategyVersion]").value });
       if (name) form.querySelector("[name=name]").value = name;
       else this.say("Type a strategy first: the name is made from it, the version, the period and the timeframe.", "bad");
+    } else if (button.dataset.goFunded) {
+      const [journal, id] = button.dataset.goFunded.split("/");
+      const b = this.list.find((x) => x.journal === journal && x.id === id);
+      if (b) this.onGoFunded(b);
     } else if (button.dataset.chart) {
       const [journal, id] = button.dataset.chart.split("/");
       const problem = await this.onChart(journal, id);

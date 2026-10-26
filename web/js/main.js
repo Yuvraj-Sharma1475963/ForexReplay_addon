@@ -1,8 +1,9 @@
 // App start-up: load data, build the chart, wire the top bar and the replay.
 
 import { formatLots, formatMoney, formatSignedMoney, loadSettings, pointValuePerLot } from "./account.js";
-import { drawingsBefore, rebuild } from "./backtest.js";
+import { drawingsBefore, indexOfTime, rebuild } from "./backtest.js";
 import { loadRules as loadChallengeRules } from "./challenge.js";
+import { cleanFundedRules, DEFAULT_FUNDED } from "./funded.js";
 import { AdrPanel } from "./adrpanel.js";
 import { AnalyticsView } from "./analyticsview.js";
 import { StrategyView } from "./strategyview.js";
@@ -803,6 +804,7 @@ async function boot() {
   }
 
   let review = null; // { journal, id, name, boxes, k } while a backtest's trades are on the chart (see below)
+  let nextRun = null; // what the next new run is besides a plain replay (a funded account: see Go funded)
   clock.onChange((_, reason) => {
     if (reason === "start" && review) hideReview(); // never alongside a replay (see showBacktestTrades)
     if (reason === "start" && !resuming) { // a new replay is a new run: no trades carried over
@@ -810,7 +812,8 @@ async function boot() {
       shotsTaken.clear();
       notes.load({});
       const startTime = m5.time[clock.position - 1];
-      backtests.begin(startTime, manifest.symbol);
+      backtests.begin(startTime, manifest.symbol, nextRun); // nextRun: a funded account's link to its challenge
+      nextRun = null;
       warnIfTested(startTime);
       // Drawings come along only if they sit wholly before the replay's "now" (no look-ahead).
       drawings.load(drawingsBefore(drawings.toJSON(), startTime + manifest.bar_seconds));
@@ -977,6 +980,49 @@ async function boot() {
       document.querySelector('[data-view="analytics"]').click();
     },
     onChart: (journal, id) => showBacktestTrades(journal, id),
+    onGoFunded: (b) => openGoFunded(b),
+  });
+
+  // ------------------------------------------------------------ Go funded: a passed challenge continues as a funded account
+  const KEY_FUNDED = "forexreplay.fundedRules";
+  const fundedDialog = $("funded-dialog");
+  let fundedParent = null;
+  function openGoFunded(b) {
+    fundedParent = b;
+    let rules = DEFAULT_FUNDED;
+    try { rules = cleanFundedRules(JSON.parse(localStorage.getItem(KEY_FUNDED) || "null") || DEFAULT_FUNDED); } catch { /* defaults */ }
+    for (const input of fundedDialog.querySelectorAll("[data-funded]")) input.value = rules[input.dataset.funded];
+    const start = b.settings && b.settings.startingBalance ? formatMoney(b.settings.startingBalance) : "the same balance";
+    $("funded-about").textContent = `"${b.name}" passed. The funded account starts on the candle it passed on, ` +
+      `with ${start} and the same risk settings, in the journal ${b.journal}. Set your firm's funded rules:`;
+    $("funded-message").textContent = "";
+    backtests.dialog.close();
+    fundedDialog.showModal();
+  }
+  $("funded-cancel").addEventListener("click", () => fundedDialog.close());
+  $("funded-start").addEventListener("click", async () => {
+    const say = (text) => { $("funded-message").textContent = text; $("funded-message").className = "order-message bad"; };
+    const raw = Object.fromEntries([...fundedDialog.querySelectorAll("[data-funded]")].map((i) => [i.dataset.funded, i.value]));
+    const rules = cleanFundedRules(raw);
+    try { localStorage.setItem(KEY_FUNDED, JSON.stringify(rules)); } catch { /* private mode */ }
+    let parent;
+    try { parent = await store.getBacktest(fundedParent.journal, fundedParent.id); } catch (err) { say(`Could not read the challenge: ${err.message}`); return; }
+    const end = parent.challengeEnd;
+    const at = end && end.outcome === "PASSED" ? indexOfTime(m5, end.endTime) : -1;
+    if (at < 0) { say("This challenge's passing candle is not in the market data, so the funded account cannot start there."); return; }
+    if (clock.active && !(await backtests.end())) { say("The replay on screen could not be saved, so it was left open."); return; }
+    if (clock.active) leaveReplay();
+    trading.updateSettings(parent.settings); // the same account: balance, risk %, commission, spread
+    trading.challengeRules = { ...rules, kind: "funded", enabled: true };
+    nextRun = {
+      stage: "funded", parentId: parent.id, parentJournal: parent.journal, journal: parent.journal,
+      strategy: parent.strategy || "", strategyVersion: parent.strategyVersion || "", name: `${parent.name} · Funded`,
+    };
+    fundedDialog.close();
+    document.querySelector('[data-view="chart"]').click();
+    clock.start(at + 1); // the passing candle is the last one shown: the account trades from the next
+    panel.renderSettings();
+    panel.say(`Funded account started after "${parent.name}". Trade on; request a payout from this panel when it allows.`, "ok");
   });
 
   // ------------------------------------------------------------ a backtest's trades on the chart
@@ -1028,7 +1074,8 @@ async function boot() {
     const run = backtests.current;
     if (!run || !run.strategy) return;
     store.listBacktests().then((list) => {
-      const hits = testedAt(list, run.strategy, startTime, run.id);
+      // A funded account carries on from its own challenge: that is not testing the same weeks again.
+      const hits = testedAt(list, run.strategy, startTime, run.id).filter((b) => !(b.id === run.parentId && b.journal === run.parentJournal));
       if (!hits.length || backtests.current !== run) return;
       panel.say(`Careful: "${run.strategy}" was already tested on this date in ${hits.slice(0, 3).map((b) => `"${b.name}" (${periodText(b)})`).join(", ")}` +
         `${hits.length > 3 ? " and more" : ""}. Replaying weeks you remember brings hindsight back in; Strategies → Coverage shows the untested gaps.`, "bad");

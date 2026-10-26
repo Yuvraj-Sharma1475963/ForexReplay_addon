@@ -516,6 +516,14 @@ button.primary {
 .challenge-rules input { width: 100%; min-width: 0; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 3px 5px; }
 .challenge-rules input:disabled { opacity: 0.6; }
 .challenge .muted.small { margin: 6px 0 0; }
+.challenge-state.funded { color: var(--up); }
+.challenge-state.lost { color: var(--down); }
+.payout-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.payout-row[hidden] { display: none; }
+.payout-row button:disabled { opacity: 0.45; cursor: not-allowed; }
+.funded-dialog { width: min(560px, calc(100vw - 32px)); }
+.funded-rules { margin: 10px 0; }
+.funded-rules input { background: transparent; }
 .meter { margin-top: 7px; }
 .meter-label { display: flex; justify-content: space-between; gap: 6px; font-size: 11px; color: var(--muted); }
 .meter-label span:last-child { color: var(--text); font-variant-numeric: tabular-nums; text-align: right; }
