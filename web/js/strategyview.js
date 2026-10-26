@@ -180,6 +180,7 @@ export class StrategyView {
       </div>
       <div class="block" id="st-compare-block"><div class="block-head"><h2>Compare versions</h2>
         <span>${this.versionSelect(0, ids)} vs ${this.versionSelect(1, ids)}</span></div><div id="st-compare"></div></div>
+      ${this.journey(g)}
       ${this.coverage(versions)}
       <div class="block"><h2>Backtests</h2>
         <div class="table-scroll"><table class="grid"><thead><tr><th>Name</th><th>Version</th><th>Status</th><th>Period</th><th class="num">Trades</th><th class="num">Result</th><th></th></tr></thead>
@@ -229,6 +230,51 @@ export class StrategyView {
       </div>
       <p class="muted small">Each bar is a backtest, from its start to the furthest candle it reached (green done, amber testing, red discarded; discarded ones are not counted).
         Testing the same weeks again lets memory leak in: pick an untested gap for the next run.${holes.length ? ` Untested: ${holes.slice(0, 6).map(span).join("; ")}${holes.length > 6 ? "…" : ""}.` : ""}</p>
+    </div>`;
+  }
+
+  /**
+   * The prop-firm journey of this strategy: challenges bought, passed, taken on as funded accounts,
+   * payouts, and what it came to after the fees. The answer to "does it earn once funded?".
+   */
+  journey(g) {
+    const live = g.backtests.filter((b) => this.withDiscarded || cleanMeta(b).status !== "discarded");
+    const challenges = live.filter((b) => b.result && b.result.challenge && b.result.stage !== "funded");
+    if (!challenges.length) return "";
+    const fundedRuns = live.filter((b) => b.result && b.result.stage === "funded");
+    const passed = challenges.filter((b) => b.result.challenge === "PASSED");
+    const decided = challenges.filter((b) => b.result.challenge !== "RUNNING");
+    const paid = fundedRuns.filter((b) => b.result.funded && b.result.funded.payouts > 0);
+    const lost = fundedRuns.filter((b) => b.result.challenge === "FAILED");
+    const sum = (list, get) => list.reduce((s, b) => s + (Number(get(b)) || 0), 0);
+    const toYou = sum(fundedRuns, (b) => b.result.funded && b.result.funded.toYou);
+    const payouts = sum(fundedRuns, (b) => b.result.funded && b.result.funded.payouts);
+    const fees = sum(challenges, (b) => b.result.fee);
+    const net = toYou - fees;
+    const money = (v) => `${v < 0 ? "−" : ""}$${Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const pctOf = (a, b) => (b ? ` (${Math.round((a / b) * 100)}%)` : "");
+    const step = (label, value, note = "") => `<div class="jr-step"><div class="jr-value">${value}</div><div class="jr-label">${label}</div>${note ? `<div class="jr-note">${note}</div>` : ""}</div>`;
+    const childOf = (c) => fundedRuns.find((f) => f.parentId === c.id && f.parentJournal === c.journal);
+    const rows = challenges.sort((a, b) => String(b.saved || "").localeCompare(String(a.saved || ""))).map((c) => {
+      const f = childOf(c);
+      const fr = f && f.result;
+      const out = fr ? (fr.funded ? fr.funded.toYou : 0) : 0;
+      const fee = Number(c.result.fee) || 0;
+      return `<tr><td>${escapeHtml(c.name)}</td><td><span class="status ${c.result.challenge === "PASSED" ? "done" : c.result.challenge === "FAILED" ? "discarded" : "testing"}">${c.result.challenge}</span></td>` +
+        `<td class="num">${fee ? money(fee) : "–"}</td>` +
+        `<td>${fr ? `${fr.challenge === "FAILED" ? "lost" : "funded"} · ${fr.funded ? fr.funded.payouts : 0} payout${fr.funded && fr.funded.payouts === 1 ? "" : "s"}` : c.result.challenge === "PASSED" ? '<span class="muted">not continued yet (Go funded in Backtests)</span>' : "–"}</td>` +
+        `<td class="num up">${fr ? money(out) : "–"}</td><td class="num ${out - fee >= 0 ? "up" : "down"}">${money(out - fee)}</td></tr>`;
+    }).join("");
+    return `<div class="block"><div class="block-head"><h2>Prop-firm journey</h2>
+        <span class="muted">${payouts} payout${payouts === 1 ? "" : "s"} · ${money(toYou)} to you − ${money(fees)} in fees = <b class="${net >= 0 ? "up" : "down"}">${money(net)}</b></span></div>
+      <div class="journey">
+        ${step("challenges", challenges.length)}${step("passed", passed.length, decided.length ? `${Math.round((passed.length / decided.length) * 100)}% of those finished` : "")}
+        ${step("funded", fundedRuns.length, lost.length ? `${lost.length} lost` : "")}${step("got paid", paid.length, pctOf(paid.length, fundedRuns.length).trim())}
+        ${step("net per challenge", `<span class="${net >= 0 ? "up" : "down"}">${money(net / challenges.length)}</span>`, "payouts to you, less fees, ÷ challenges")}
+      </div>
+      <div class="table-scroll"><table class="grid"><thead><tr><th>Challenge</th><th>Result</th><th class="num">Fee</th><th>Funded</th><th class="num">To you</th><th class="num">Net</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+      <p class="muted small">A challenge that is still running counts in "challenges" and its fee is counted. A few journeys make a noisy average: more runs give a fairer answer.</p>
     </div>`;
   }
 

@@ -143,6 +143,11 @@ export class FundedAccount {
     return { payouts: this.payouts.length, withdrawn: sum("amount"), toYou: sum("toYou"), toFirm: sum("toFirm") };
   }
 
+  /** What a saved backtest keeps: the totals and each payout (for the analytics page). */
+  record() {
+    return { ...this.totals(), list: this.payouts.map((p) => ({ ...p })) };
+  }
+
   summary() {
     return {
       kind: this.kind, outcome: this.outcome, reason: this.reason, endTime: this.endTime,

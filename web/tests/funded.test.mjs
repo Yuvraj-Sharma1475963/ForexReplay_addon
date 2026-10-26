@@ -131,11 +131,12 @@ test("a funded run saved and rebuilt pays out on the same candle, for the same a
   goTo(clock, 15 * DAY);
   const meta = { id: "bt-funded", name: "funded", journal: "test_journal", created: "now", startTime: m5.time[5], stage: "funded" };
   const saved = JSON.parse(JSON.stringify(snapshot(meta, { trading, drawings: new DrawingStore(), m5, clock, manifest: { symbol: "EURUSD", digits: 5, pip_points: 10 }, timeframe: "M15" })));
-  assert.deepEqual(saved.result.funded, { payouts: 1, withdrawn: 600, toYou: 540, toFirm: 60 });
+  assert.deepEqual(saved.result.funded, { payouts: 1, withdrawn: 600, toYou: 540, toFirm: 60,
+    list: [{ time: m5.time[14 * DAY + 9], amount: 600, toYou: 540, toFirm: 60 }] });
   assert.equal(saved.result.stage, "funded");
   assert.equal(saved.challenge.kind, "funded");
   const { trading: again, problems } = rebuild(saved, { m5, pipPoints: 10, pointValue: 1 });
   assert.deepEqual(problems, []);
   assert.equal(again.balance, 5000);
-  assert.deepEqual(again.funded.totals(), saved.result.funded);
+  assert.deepEqual(again.funded.record(), saved.result.funded);
 });

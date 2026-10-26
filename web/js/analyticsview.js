@@ -10,6 +10,11 @@ import {
   parseRows, propCheck,
 } from "./analytics.js";
 import { groupOf, loadTagSets } from "./tagsets.js";
+import { serverOffsetSeconds } from "./timeframes.js";
+import { formatDateTime } from "./time.js";
+
+/** A UTC time as broker-server time text, as the journal writes exit times ("2026-03-05 11:05:00"). */
+const serverText = (utc) => new Date((utc + serverOffsetSeconds(utc)) * 1000).toISOString().slice(0, 19).replace("T", " ");
 
 const UP = "#089981", DOWN = "#f23645", LINE = "#2962ff", GRID = "#2e2e2e", MUTED = "#8c8c8c";
 const KEY_JOURNAL = "forexreplay.analytics.journal";
@@ -171,6 +176,7 @@ export class AnalyticsView {
     this.el("an-count").textContent = filtered ? `${trades.length} of ${this.trades.length} trades` : `${trades.length} trades`;
     this.renderTiles(stats, trades);
     this.renderBalance(trades);
+    this.renderPayouts();
     this.renderCalendar(trades);
     this.renderEquity(trades);
     this.renderHistogram(trades);
@@ -211,10 +217,16 @@ export class AnalyticsView {
       ? this.backtests.find((b) => b.id === f.run && b.journal === this.journal) : null;
     const start = run && run.settings && Number(run.settings.startingBalance) > 0 ? Number(run.settings.startingBalance) : null;
     const account = start !== null;
-    const curve = balanceCurve(trades, account ? start : 0);
+    // A funded account's payouts come off the balance: they are steps down, between the trades.
+    const paid = account && run.result && run.result.funded && Array.isArray(run.result.funded.list) ? run.result.funded.list : [];
+    const payoutSteps = paid.map((p) => {
+      const at = serverText(p.time);
+      return { payout: p, money: -p.amount, r: 0, side: "", exitDay: at.slice(0, 10), row: { exit_time: at, trade_id: "" } };
+    });
+    const curve = balanceCurve([...trades, ...payoutSteps], account ? start : 0);
     const svg = this.el("an-balance"), tip = this.el("an-balance-tip");
     this.el("an-balance-title").textContent = account ? "Account balance" : "Cumulative P&L";
-    const skipped = trades.length - curve.length;
+    const skipped = trades.length + payoutSteps.length - curve.length;
     this.el("an-balance-note").textContent = (account
       ? "Closed balance after each trade of this run, one step per trade; open trades are not in the journal."
       : "Total $ won or lost, one step per trade. Pick a single run (and no other filter) to see it as an account with its starting balance and loss limit.") +
@@ -234,8 +246,11 @@ export class AnalyticsView {
     const figure = (label, value, t = "") => `<div><div class="figure-label">${label}</div><div class="figure-value ${t}">${escapeHtml(value)}</div></div>`;
     const plain = (v) => `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     this.el("an-balance-figures").innerHTML = account
-      ? figure("P&amp;L", usd(end - start), tone(end - start)) + figure("Starting balance", plain(start)) + figure("Closed balance", plain(end)) +
-        (floor !== null ? figure("Max loss floor", plain(floor), "down") : "") + (target !== null ? figure("Profit target", plain(target), "up") : "")
+      ? (paid.length // a funded account: what the trades made, before the payouts took it out
+        ? figure("Traded P&amp;L", usd(end - start + run.result.funded.withdrawn), tone(end - start + run.result.funded.withdrawn))
+        : figure("P&amp;L", usd(end - start), tone(end - start))) + figure("Starting balance", plain(start)) + figure("Closed balance", plain(end)) +
+        (floor !== null ? figure("Max loss floor", plain(floor), "down") : "") + (target !== null ? figure("Profit target", plain(target), "up") : "") +
+        (paid.length ? figure("Paid to you", plain(run.result.funded.toYou), "up") : "")
       : figure("P&amp;L", usd(end), tone(end)) + figure("Trades with $", `${curve.length}`);
 
     const W = 760, H = 260, L = 64, R = 16, T = 14, B = 26;
@@ -288,8 +303,11 @@ export class AnalyticsView {
       const dot = svg.querySelector(".hover-dot");
       dot.setAttribute("cx", X(i)); dot.setAttribute("cy", Y(p.balance)); dot.setAttribute("visibility", "visible");
       tip.hidden = false;
-      tip.innerHTML = `<b>${escapeHtml(account ? plain(p.balance) : usd(p.balance))}</b> after trade ${i}<br><span class="muted">` +
-        `#${escapeHtml(p.trade.row.trade_id)} ${escapeHtml(p.trade.side)} ${escapeHtml(usd(p.trade.money))} · closed ${escapeHtml(p.trade.row.exit_time)}</span>`;
+      tip.innerHTML = p.trade.payout
+        ? `<b>${escapeHtml(plain(p.balance))}</b> after a payout<br><span class="muted">${escapeHtml(usd(-p.trade.payout.amount))} withdrawn, ` +
+          `${escapeHtml(plain(p.trade.payout.toYou))} to you · ${escapeHtml(p.trade.row.exit_time)}</span>`
+        : `<b>${escapeHtml(account ? plain(p.balance) : usd(p.balance))}</b> after trade ${i}<br><span class="muted">` +
+          `#${escapeHtml(p.trade.row.trade_id)} ${escapeHtml(p.trade.side)} ${escapeHtml(usd(p.trade.money))} · closed ${escapeHtml(p.trade.row.exit_time)}</span>`;
       tip.style.left = `${Math.min(box.width - 260, Math.max(0, (X(i) / W) * box.width + 10))}px`;
       tip.style.top = `${(Y(p.balance) / H) * box.height - 40}px`;
     };
@@ -354,6 +372,29 @@ export class AnalyticsView {
     </td></tr></tfoot>`;
   }
 
+
+  /** A funded account picked on its own: each payout, the totals, and the result after the challenge's fee. */
+  renderPayouts() {
+    const box = this.el("an-payouts");
+    const f = this.filters;
+    const run = f.run ? this.backtests.find((b) => b.id === f.run && b.journal === this.journal) : null;
+    const r = run && run.result;
+    if (!r || r.stage !== "funded" || !r.funded) { box.hidden = true; box.innerHTML = ""; return; }
+    const parent = this.backtests.find((b) => b.id === run.parentId && b.journal === run.parentJournal);
+    const fee = parent && parent.result ? Number(parent.result.fee) || 0 : 0;
+    const list = Array.isArray(r.funded.list) ? r.funded.list : [];
+    const lost = r.challenge === "FAILED";
+    const plain = (v) => `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const net = r.funded.toYou - fee;
+    box.hidden = false;
+    box.innerHTML = `<div class="block-head"><h2>Payouts</h2><span class="muted">${lost ? "Account lost" : "Account still funded"}${parent ? ` · after the challenge "${escapeHtml(parent.name)}"` : ""}</span></div>` +
+      (list.length ? `<div class="table-scroll"><table class="grid"><thead><tr><th>#</th><th>Requested (IST)</th><th class="num">Withdrawn</th><th class="num">To you</th><th class="num">To the firm</th></tr></thead><tbody>` +
+        list.map((p, i) => `<tr><td>${i + 1}</td><td class="nowrap">${escapeHtml(formatDateTime(p.time))}</td><td class="num">${plain(p.amount)}</td>` +
+          `<td class="num up">${plain(p.toYou)}</td><td class="num muted">${plain(p.toFirm)}</td></tr>`).join("") + "</tbody></table></div>"
+        : '<p class="muted">No payout requested yet.</p>') +
+      `<p class="payout-summary"><b>${plain(r.funded.toYou)}</b> paid to you in ${r.funded.payouts} payout${r.funded.payouts === 1 ? "" : "s"}` +
+      `${fee ? ` − <b>${plain(fee)}</b> challenge fee = <b class="${net >= 0 ? "up" : "down"}">${usd(net)}</b> net` : ""}.</p>`;
+  }
 
   /** Cumulative R after each trade: one line, a light wash under it, a crosshair with the trade under the pointer. */
   renderEquity(trades) {
