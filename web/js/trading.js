@@ -14,10 +14,14 @@
 // * In challenge mode (challenge.js) the prop-firm rules are checked after every
 //   M5 candle, at that candle's worst prices. They depend only on candles and
 //   actions, so a rebuilt run fails or passes on the same candle as the original.
+// * A funded account (funded.js) is checked the same way, without a target. Its payouts
+//   are actions too ("payout"); what they withdrew comes off the balance.
+// * With a leverage in the rules, an order needing more margin than is free is refused.
 
-import { Account, DEFAULT_SETTINGS } from "./account.js";
+import { Account, DEFAULT_SETTINGS, formatMoney, LOT_UNITS } from "./account.js";
 import { Broker, InvalidOrder, OrderType, Side, Status } from "./broker.js";
 import { Challenge, CHALLENGE_EXIT, Outcome } from "./challenge.js";
+import { cleanFundedRules, FundedAccount } from "./funded.js";
 
 export class Trading {
   /**
@@ -35,6 +39,7 @@ export class Trading {
     this.broker = this.newBroker();
     this.actions = []; // [{ at: UTC time of the live candle, kind, ... }] in the order they happened
     this.startSettings = { ...this.account.settings }; // the account settings the run started with
+    this.withdrawn = 0; // dollars paid out of a funded account so far
     this.challengeRules = challenge; // rules for the next run; changed by the panel between replays
     this.challenge = this.newChallenge();
     clock.onReveal((from, to) => this.reveal(from, to));
@@ -44,10 +49,18 @@ export class Trading {
     return new Broker({ spreadPoints: this.minSpreadPoints, onClose: () => {}, onFill: () => {} });
   }
 
+  /** The prop-firm rules of a new run: a challenge, a funded account (rules.kind "funded") or none. */
   newChallenge() {
     const rules = this.challengeRules;
-    return rules && rules.enabled ? new Challenge(rules, this.account.settings.startingBalance) : null;
+    if (!rules || !rules.enabled) return null;
+    if (rules.kind === "funded") {
+      const startTime = this.m5.time[Math.max(1, this.clock.position) - 1]; // the candle the account starts on
+      return new FundedAccount(cleanFundedRules(rules), this.account.settings.startingBalance, startTime);
+    }
+    return new Challenge(rules, this.account.settings.startingBalance);
   }
+
+  get funded() { return this.challenge && this.challenge.kind === "funded" ? this.challenge : null; }
 
   /** Start a fresh run (called when a new replay starts). */
   reset() {
@@ -55,6 +68,7 @@ export class Trading {
     this.account.reset();
     this.actions = [];
     this.startSettings = { ...this.account.settings };
+    this.withdrawn = 0;
     this.challenge = this.newChallenge();
     this.onChange();
   }
@@ -68,6 +82,7 @@ export class Trading {
     this.minSpreadPoints = rebuilt.minSpreadPoints;
     this.challengeRules = rebuilt.challengeRules;
     this.challenge = rebuilt.challenge;
+    this.withdrawn = rebuilt.withdrawn;
     this.onChange();
   }
 
@@ -90,6 +105,7 @@ export class Trading {
       case "partial": return this.partialClose(action.id, action.percent);
       case "closeAll": return this.closeAll();
       case "settings": return this.updateSettings(action.settings);
+      case "payout": return this.requestPayout();
       default: throw new InvalidOrder(`Unknown action "${action.kind}".`);
     }
   }
@@ -170,9 +186,14 @@ export class Trading {
   /** Why trading is not possible right now, or null when it is. */
   get blockedReason() {
     if (!this.clock.active) return "Start a replay to trade.";
+    if (this.funded && !this.funded.running) {
+      const t = this.funded.totals();
+      return `Funded account lost: ${this.funded.reason}, after ${t.payouts} payout${t.payouts === 1 ? "" : "s"} ` +
+        `(${formatMoney(t.toYou)} to you). This run is over.`;
+    }
     if (this.challenge && !this.challenge.running) {
       return `Challenge ${this.challenge.outcome === Outcome.PASSED ? "passed" : "failed"}: ${this.challenge.reason}. ` +
-        "This run is over; start a new replay to try again.";
+        (this.challenge.outcome === Outcome.PASSED ? "Continue it as a funded account from Backtests (Go funded)." : "This run is over; start a new replay to try again.");
     }
     if (!this.clock.live) return "You are viewing history. Press End to return to the live candle.";
     if (this.clock.finished) return "The replay has reached the end of the data.";
@@ -210,6 +231,7 @@ export class Trading {
     Broker.validate(side, this.plannedEntry({ side, type, price }), stopLoss, takeProfit); // wrong-side prices first
     const sized = this.preview({ side, type, price, stopLoss });
     if (sized.error) throw new InvalidOrder(sized.error);
+    this.checkMargin(sized.units, this.plannedEntry({ side, type, price }));
     const trade = type === "market"
       ? this.broker.marketOrder(side, stopLoss, takeProfit, this.nowIndex, this.bid, this.spread)
       : this.broker.pendingOrder(side, price, stopLoss, takeProfit, this.nowIndex, this.bid, this.spread);
@@ -217,6 +239,48 @@ export class Trading {
     this.record("place", { order: { side, type, ...(type === "pending" ? { price } : {}), stopLoss, takeProfit } });
     this.onChange();
     return trade;
+  }
+
+  /** Dollars of margin `units` (0.01 lots) need at a price in points, at the leverage of the run's rules (0 when there is none). */
+  margin(units, points) {
+    const leverage = this.challenge ? this.challenge.rules.leverage : 0;
+    return leverage > 0 ? (units / LOT_UNITS) * points * this.account.pointValue / leverage : 0;
+  }
+
+  /** Margin held by open trades and waiting orders. */
+  get usedMargin() {
+    return this.broker.trades.filter((t) => t.isActive)
+      .reduce((sum, t) => sum + this.margin(this.account.units(t), t.entryPrice ?? t.plannedEntry), 0);
+  }
+
+  /** Refuse an order whose margin is more than the free margin (equity minus margin in use), at the rules' leverage. */
+  checkMargin(units, entry) {
+    const leverage = this.challenge ? this.challenge.rules.leverage : 0;
+    if (!(leverage > 0)) return;
+    const need = this.margin(units, entry);
+    const free = this.equity - this.usedMargin;
+    if (need > free + 1e-9) {
+      throw new InvalidOrder(`Not enough margin at 1:${leverage}: this order needs ${formatMoney(need)}, free margin is ${formatMoney(free)}. ` +
+        "Use a smaller size, a wider stop or a lower risk %.");
+    }
+  }
+
+  /**
+   * Take a payout from a funded account (funded.js): only when its rules allow it, at the live candle.
+   * Returns { time, amount, toYou, toFirm }.
+   */
+  requestPayout() {
+    this.ensureCanTrade();
+    const f = this.funded;
+    if (!f) throw new InvalidOrder("Payouts are for funded accounts.");
+    const at = this.m5.time[this.clock.furthest - 1];
+    const why = f.payoutBlocked(at, { balance: this.balance, open: this.activeCount }); // open trades and waiting orders
+    if (why) throw new InvalidOrder(why);
+    const payout = f.payout(at, this.balance);
+    this.withdrawn = Math.round((this.withdrawn + payout.amount) * 100) / 100;
+    this.record("payout");
+    this.onChange();
+    return payout;
   }
 
   find(id) {
@@ -309,12 +373,12 @@ export class Trading {
   }
 
   // ----- money -------------------------------------------------------------
-  /** Starting balance plus everything banked so far. */
-  get balance() { return this.account.balance(this.broker.trades); }
+  /** Starting balance plus everything banked so far, minus what a funded account paid out. */
+  get balance() { return this.account.balance(this.broker.trades) - this.withdrawn; }
 
   /** Balance plus the floating result of open trades. */
   get equity() {
-    return this.clock.active ? this.account.equity(this.broker.trades, this.bid, this.spread) : this.balance;
+    return this.clock.active ? this.account.equity(this.broker.trades, this.bid, this.spread) - this.withdrawn : this.balance;
   }
 
   /** What a trade is worth in dollars right now (or was when it closed), after commission. */

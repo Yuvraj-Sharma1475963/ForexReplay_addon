@@ -102,6 +102,9 @@ export function resultOf(trading) {
   const c = trading.challenge;
   return {
     challenge: c ? c.outcome : null,
+    stage: c ? c.kind : null, // "challenge" or "funded"
+    fee: c && c.kind === "challenge" ? c.rules.fee : 0,
+    funded: trading.funded ? trading.funded.totals() : null, // { payouts, withdrawn, toYou, toFirm }
     closed: s.closed, open: s.open, pending: s.pending, wins: s.wins, losses: s.losses,
     totalR: Math.round(s.totalR * 100) / 100,
     money: Math.round(s.totalMoney * 100) / 100,
@@ -199,6 +202,10 @@ export function rebuild(saved, { m5, pipPoints, pointValue }) {
   const end = c ? { outcome: c.outcome, endTime: c.endTime } : null;
   if (JSON.stringify(end) !== JSON.stringify(saved.challengeEnd ?? null)) {
     problems.push(`The challenge ended differently: saved ${JSON.stringify(saved.challengeEnd)}, now ${JSON.stringify(end)}.`);
+  }
+  const paid = trading.funded ? trading.funded.totals() : null;
+  if (saved.result && saved.result.funded && JSON.stringify(paid) !== JSON.stringify(saved.result.funded)) {
+    problems.push(`The payouts came out differently: saved ${JSON.stringify(saved.result.funded)}, now ${JSON.stringify(paid)}.`);
   }
   return { trading, position: clock.position, problems };
 }

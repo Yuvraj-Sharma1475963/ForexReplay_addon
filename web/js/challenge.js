@@ -28,15 +28,19 @@ import { serverDate } from "./timeframes.js";
 
 export const STORAGE_KEY = "forexreplay.challenge";
 
-export const DEFAULT_RULES = Object.freeze({ enabled: false, targetPercent: 8, dailyPercent: 5, maxPercent: 10 });
+// fee: what the challenge costs, in dollars (only for the results: journey net = payouts - fee).
+// leverage: 1:N; orders needing more margin than the free margin are refused (0 = no check).
+export const DEFAULT_RULES = Object.freeze({ enabled: false, targetPercent: 8, dailyPercent: 5, maxPercent: 10, fee: 0, leverage: 0 });
 
 export const PRESETS = Object.freeze({
+  oneStep5k: { label: "Phase 1 · 5K", targetPercent: 10, dailyPercent: 3, maxPercent: 6, fee: 59, leverage: 30, startingBalance: 5000,
+    title: "$5,000 account: 10% target ($500), 3% daily loss ($150), $300 max loss (6%), $59 fee, leverage 1:30" },
   phase1: { label: "8% target", targetPercent: 8, dailyPercent: 5, maxPercent: 10 },
   phase1Ten: { label: "10% target", targetPercent: 10, dailyPercent: 5, maxPercent: 10 },
   phase2: { label: "Phase 2: 5% target", targetPercent: 5, dailyPercent: 5, maxPercent: 10 },
 });
 
-const LIMITS = { targetPercent: [0.1, 100], dailyPercent: [0.1, 100], maxPercent: [0.1, 100] };
+const LIMITS = { targetPercent: [0.1, 100], dailyPercent: [0.1, 100], maxPercent: [0.1, 100], fee: [0, 100000], leverage: [0, 1000] };
 
 /** Fill gaps and replace nonsense with defaults, so a damaged saved value can never break the app. */
 export function cleanRules(raw) {
@@ -47,6 +51,7 @@ export function cleanRules(raw) {
     if (raw[key] !== null && raw[key] !== "" && Number.isFinite(value) && value >= low && value <= high) out[key] = value;
   }
   out.enabled = raw.enabled === true;
+  out.leverage = Math.round(out.leverage);
   return out;
 }
 
@@ -72,6 +77,7 @@ export class Challenge {
    * @param {number} startingBalance  dollars
    */
   constructor(rules, startingBalance) {
+    this.kind = "challenge";
     this.rules = cleanRules({ ...rules, enabled: true });
     this.start = startingBalance;
     this.target = startingBalance * (1 + this.rules.targetPercent / 100);

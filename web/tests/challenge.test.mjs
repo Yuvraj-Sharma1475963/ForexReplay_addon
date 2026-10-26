@@ -126,7 +126,7 @@ test("the starting balance is locked during a challenge, and nothing is checked 
 
 test("damaged rules fall back to defaults; trading days are counted per server day", () => {
   assert.deepEqual(cleanRules({ enabled: "yes", targetPercent: -3, dailyPercent: "4", maxPercent: 1e9 }),
-    { enabled: false, targetPercent: 8, dailyPercent: 4, maxPercent: 10 });
+    { enabled: false, targetPercent: 8, dailyPercent: 4, maxPercent: 10, fee: 0, leverage: 0 }); // fee and leverage: off unless set
   const c = new Challenge(RULES, 10000);
   c.traded(utc("2025-08-04T10:00"));
   c.traded(utc("2025-08-04T20:59"));
