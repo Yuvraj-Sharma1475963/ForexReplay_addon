@@ -40,6 +40,7 @@ export class Trading {
     this.actions = []; // [{ at: UTC time of the live candle, kind, ... }] in the order they happened
     this.startSettings = { ...this.account.settings }; // the account settings the run started with
     this.withdrawn = 0; // dollars paid out of a funded account so far
+    this.undos = []; // trades taken back (backtest.js undoLastTrade), kept so the run shows them
     this.challengeRules = challenge; // rules for the next run; changed by the panel between replays
     this.challenge = this.newChallenge();
     clock.onReveal((from, to) => this.reveal(from, to));
@@ -69,6 +70,7 @@ export class Trading {
     this.actions = [];
     this.startSettings = { ...this.account.settings };
     this.withdrawn = 0;
+    this.undos = [];
     this.challenge = this.newChallenge();
     this.onChange();
   }
@@ -83,6 +85,7 @@ export class Trading {
     this.challengeRules = rebuilt.challengeRules;
     this.challenge = rebuilt.challenge;
     this.withdrawn = rebuilt.withdrawn;
+    this.undos = rebuilt.undos;
     this.onChange();
   }
 

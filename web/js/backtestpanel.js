@@ -450,6 +450,7 @@ export class Backtests {
     if (b.timeframe) parts.push(escapeHtml(b.timeframe));
     if (m.notes) parts.push(`<span title="${escapeHtml(m.notes)}">notes</span>`);
     if (m.archived) parts.push('<span class="tag">archived</span>');
+    if (b.result && b.result.undos) parts.push(`<span class="tag" title="Trades taken back with Undo last trade">${b.result.undos} undo${b.result.undos === 1 ? "" : "s"} used</span>`);
     return parts.join(" · ");
   }
 

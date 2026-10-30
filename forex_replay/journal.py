@@ -190,6 +190,17 @@ class TradeJournal:
             self._rewrite(rows)
         return changed
 
+    def prune_run(self, run_id: str, keep: set[tuple[str, str]]) -> int:
+        """Remove this run's rows that are not in `keep` ({(trade_id, entry_time)}): trades taken back
+        with Undo. A taken-back trade's id is given to the next trade, so the entry time tells them apart."""
+        with self.path.open(newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+        kept = [row for row in rows if row["run_id"] != run_id or (str(row["trade_id"]), row["entry_time"]) in keep]
+        if len(kept) != len(rows):
+            self._rewrite(kept)
+            self._logged = {(row["run_id"], row["trade_id"]) for row in kept}
+        return len(rows) - len(kept)
+
     def drop_run(self, run_id: str) -> int:
         """Remove every row of one run (a backtest moved to another journal). Returns how many went."""
         with self.path.open(newline="", encoding="utf-8") as f:

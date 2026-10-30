@@ -105,12 +105,13 @@ def save(journal: str, backtest_id: str, data: dict, root: Path = JOURNALS_DIR) 
         log = TradeJournal(root / journal / "trades.csv", Instrument(symbol=symbol), run_id=backtest_id)
         added = 0
         closed = [t for t in data["trades"] if t.get("status") == "CLOSED"]
-        for trade in closed:
-            row = web_trade_to_row(trade, symbol=symbol, digits=data["digits"],
-                                   pip_points=data["pipPoints"], run_id=backtest_id)
+        rows = [web_trade_to_row(trade, symbol=symbol, digits=data["digits"], pip_points=data["pipPoints"], run_id=backtest_id)
+                for trade in closed]
+        removed = log.prune_run(backtest_id, {(str(r["trade_id"]), r["entry_time"]) for r in rows})  # taken back with Undo
+        for row in rows:
             added += log.log_row(row)
         updated = log.update_notes({str(t["id"]): note_fields(t) for t in closed})
-    return {"ok": True, "journalAdded": added, "journalUpdated": updated,
+    return {"ok": True, "journalAdded": added, "journalUpdated": updated, "journalRemoved": removed,
             "journal": str(log.path.relative_to(root.parent))}
 
 

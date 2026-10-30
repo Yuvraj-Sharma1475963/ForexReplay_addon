@@ -20,9 +20,10 @@ export class TradingPanel {
   /**
    * @param {HTMLElement} root   the panel element
    * @param {object} options { trading, m5, digits, onPickChange(label | null), notes: TradeNotes, onPickTrade(id),
-   *   planCheck({ entry, stopLoss, takeProfit }) -> warnings from the ADR plan }
+   *   planCheck({ entry, stopLoss, takeProfit }) -> warnings from the ADR plan,
+   *   undo: { limit, run() -> message } to take back the most recent trade (main.js) }
    */
-  constructor(root, { trading, m5, digits, onPickChange, notes = null, onPickTrade = () => {}, planCheck = null }) {
+  constructor(root, { trading, m5, digits, onPickChange, notes = null, onPickTrade = () => {}, planCheck = null, undo = null }) {
     this.root = root;
     this.trading = trading;
     this.m5 = m5;
@@ -40,6 +41,8 @@ export class TradingPanel {
     this.message = { text: "", tone: "" };
 
     this.el = (id) => root.querySelector(`#${id}`);
+    this.undo = undo;
+    this.undoArmed = false;
     this.inputs = { price: this.el("order-price"), stopLoss: this.el("order-sl"), takeProfit: this.el("order-tp") };
 
     root.addEventListener("click", (event) => this.handleClick(event));
@@ -230,6 +233,8 @@ export class TradingPanel {
       saveSettings(this.trading.updateSettings({ sizeMode: target.dataset.size }));
       this.renderSettings();
       this.render();
+    } else if (target.id === "undo-trade") {
+      this.undoClick(target);
     } else if (target.id === "close-all") {
       this.attempt(() => this.trading.closeAll());
     } else if (target.dataset.breakeven) {
@@ -479,7 +484,45 @@ export class TradingPanel {
     return REASON_LABEL[trade.exitReason];
   }
 
+  /** Undo needs a second click: what it removes is named first. */
+  async undoClick(button) {
+    const t = this.trading;
+    const last = t.broker.trades[t.broker.trades.length - 1];
+    if (!this.undo || !last) return;
+    if (!this.undoArmed) {
+      this.undoArmed = true;
+      button.textContent = `Undo #${last.id}?`;
+      button.classList.add("armed");
+      this.say(`Click "Undo #${last.id}?" again to take back #${last.id} ${last.side} as if it was never placed. ` +
+        `This backtest can do it ${this.undo.limit - t.undos.length} time${this.undo.limit - t.undos.length === 1 ? "" : "s"}; it will show that it did.`);
+      return;
+    }
+    this.undoArmed = false;
+    try {
+      this.say(await this.undo.run(), "ok");
+    } catch (err) {
+      this.say(err.message, "bad");
+    }
+    this.render();
+  }
+
+  renderUndo() {
+    const t = this.trading;
+    const button = this.el("undo-trade");
+    const left = this.undo ? this.undo.limit - t.undos.length : 0;
+    const can = this.undo && t.clock.active && t.clock.live && t.broker.trades.length > 0;
+    button.hidden = !can && !(t.clock.active && t.undos.length);
+    button.disabled = !can || left <= 0;
+    if (!this.undoArmed) {
+      button.textContent = left > 0 ? `Undo last trade (${left} left)` : "Undo used";
+      button.classList.remove("armed");
+    }
+    button.title = left > 0 ? "Take back the most recent trade, as if it was never placed (once per backtest)"
+      : `This backtest took back #${t.undos.map((u) => u.id).join(", #")}.`;
+  }
+
   renderTrades() {
+    this.renderUndo();
     const t = this.trading;
     const blocked = !!t.blockedReason;
     const off = blocked ? " disabled" : "";

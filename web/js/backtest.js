@@ -22,6 +22,7 @@ import { LOT_UNITS } from "./account.js";
 import { InvalidOrder, Status, Trading } from "./trading.js";
 
 export const FORMAT_VERSION = 1;
+export const UNDO_LIMIT = 1; // trades a backtest may take back (a mistake should not ruin a run; more would)
 const NAME = /^[A-Za-z0-9_-]{1,48}$/;
 
 export class BacktestError extends Error {}
@@ -96,6 +97,48 @@ export function compareTrades(saved, rebuilt) {
   return problems;
 }
 
+/**
+ * The action log without trade `id`: the "place" that made it (trade ids follow the order of places)
+ * and every action about it (close, cancel, modify, partial). Other actions stay as they were.
+ */
+export function actionsWithout(actions, id) {
+  let places = 0;
+  return actions.filter((a) => {
+    if (a.kind === "place") return ++places !== id;
+    return !("id" in a && a.id === id);
+  });
+}
+
+/**
+ * Take back the most recent trade, as if it had never been placed: the run is rebuilt from its
+ * actions without that trade, up to where the replay is now (nothing is rewound: the candles since
+ * have been seen). Only the most recent trade, so every other trade stays exactly as it was.
+ * Allowed UNDO_LIMIT times a backtest, and each one is kept in `undos` so the run shows it.
+ * Returns { trading, removed, problems }; throws BacktestError when it is not allowed.
+ */
+export function undoLastTrade(trading, { m5, pipPoints, pointValue, startTime }) {
+  const trades = trading.broker.trades;
+  if (!trades.length) throw new BacktestError("There is no trade to undo.");
+  if (trading.undos.length >= UNDO_LIMIT) {
+    throw new BacktestError(`This backtest has used its ${UNDO_LIMIT} undo${UNDO_LIMIT === 1 ? "" : "s"}.`);
+  }
+  const last = trades[trades.length - 1];
+  const at = (i) => (i === null || i === undefined ? null : m5.time[i]);
+  const removed = {
+    id: last.id, side: last.side, status: last.status, placedTime: at(last.placedTime), entryTime: at(last.entryTime),
+    resultR: last.resultR, money: last.status === Status.CLOSED ? trading.account.realized(last) : null,
+    undoneAt: m5.time[trading.clock.furthest - 1],
+  };
+  const draft = {
+    version: FORMAT_VERSION, startTime, furthestTime: m5.time[trading.clock.furthest - 1],
+    settings: { ...trading.startSettings }, challenge: trading.challenge ? { ...trading.challenge.rules } : null,
+    actions: actionsWithout(trading.actions, last.id), drawings: [], trades: [], undos: [...trading.undos, removed],
+  };
+  const { trading: again, problems } = rebuild(draft, { m5, pipPoints, pointValue });
+  // The draft has no saved trades to compare with: only actions that could not be repeated matter here.
+  return { trading: again, removed, problems: problems.filter((p) => p.startsWith("Action ")) };
+}
+
 /** Totals shown in the list of saved backtests. */
 export function resultOf(trading) {
   const s = trading.summary();
@@ -109,6 +152,7 @@ export function resultOf(trading) {
     totalR: Math.round(s.totalR * 100) / 100,
     money: Math.round(s.totalMoney * 100) / 100,
     balance: Math.round(trading.balance * 100) / 100,
+    undos: trading.undos.length,
   };
 }
 
@@ -128,6 +172,7 @@ export function snapshot(meta, { trading, drawings, notes = null, m5, clock, man
     challenge: trading.challenge ? { ...trading.challenge.rules } : null,
     challengeEnd: trading.challenge ? { outcome: trading.challenge.outcome, endTime: trading.challenge.endTime } : null,
     actions: trading.actions.map((a) => structuredClone(a)),
+    undos: trading.undos.map((u) => ({ ...u })), // trades taken back (undoLastTrade): not in the actions any more
     drawings: drawings.toJSON(),
     notes: notes ? notes.toJSON() : {},
     // Each trade carries its note, tags and screenshot names too, for the journal CSV.
@@ -179,6 +224,7 @@ export function rebuild(saved, { m5, pipPoints, pointValue }) {
 
   const clock = new StepClock(m5.length, start + 1);
   const trading = new Trading({ m5, clock, pipPoints, pointValue, settings: saved.settings, challenge: saved.challenge || null });
+  trading.undos = Array.isArray(saved.undos) ? saved.undos.map((u) => ({ ...u })) : [];
   const problems = [];
   saved.actions.forEach((action, n) => {
     const at = indexOfTime(m5, action.at);

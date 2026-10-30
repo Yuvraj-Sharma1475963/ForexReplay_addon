@@ -1,7 +1,7 @@
 // App start-up: load data, build the chart, wire the top bar and the replay.
 
 import { formatLots, formatMoney, formatSignedMoney, loadSettings, pointValuePerLot } from "./account.js";
-import { drawingsBefore, indexOfTime, rebuild } from "./backtest.js";
+import { drawingsBefore, indexOfTime, rebuild, UNDO_LIMIT, undoLastTrade } from "./backtest.js";
 import { loadRules as loadChallengeRules } from "./challenge.js";
 import { cleanFundedRules, DEFAULT_FUNDED } from "./funded.js";
 import { AdrPanel } from "./adrpanel.js";
@@ -368,6 +368,29 @@ async function boot() {
         for (const [id, kind] of shots) takeScreenshot(id, kind);
       });
     }
+  }
+
+  /** Take back the most recent trade (backtest.js undoLastTrade), then tidy what was written about it. */
+  async function undoTrade() {
+    if (!clock.active || !backtests.current) throw new Error("Undo works during a replay.");
+    if (!clock.live) throw new Error("Return to the live candle (End) first.");
+    const { trading: again, removed, problems } = undoLastTrade(trading, {
+      m5, pipPoints: manifest.pip_points, pointValue: pointValuePerLot(manifest.digits), startTime: backtests.current.startTime,
+    });
+    trading.adopt(again);
+    const written = notes.toJSON();
+    const shots = (written[removed.id] && written[removed.id].screenshots) || [];
+    delete written[removed.id];
+    notes.load(written); // its note and tags go with it
+    for (const name of shots) store.deleteScreenshot(backtests.current.journal, name).catch(() => { /* only tidying */ });
+    shotsTaken.delete(`${removed.id}:entry`);
+    shotsTaken.delete(`${removed.id}:exit`);
+    journalBox.pick(null);
+    await backtests.save(); // its journal row goes on the next save
+    refreshTrading();
+    const result = removed.resultR === null || removed.resultR === undefined ? removed.status.toLowerCase() : `${removed.resultR >= 0 ? "+" : ""}${removed.resultR.toFixed(2)}R`;
+    return `Took back #${removed.id} ${removed.side} (${result}): the run is as if it was never placed. ` +
+      `This backtest has used its undo.${problems.length ? ` Note: ${problems.join(" ")}` : ""}`;
   }
 
   /** Trades that already exist when a run is opened get no automatic pictures (they had their moment). */
@@ -948,6 +971,7 @@ async function boot() {
     notes,
     onPickTrade: (id) => journalBox.pick(journalBox.id === id ? null : id),
     planCheck: (order) => (adrPanel ? adrPanel.check(order) : []),
+    undo: { limit: UNDO_LIMIT, run: () => undoTrade() },
   });
   // The ADR plan: today's ADR and the plan's thresholds, for the replay's day (or the newest day outside a replay).
   adrPanel = new AdrPanel($("adr-plan"), { m5, nowIndex: () => clock.position - 1, pipPoints: manifest.pip_points });

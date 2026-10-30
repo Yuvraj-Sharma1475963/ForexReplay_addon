@@ -317,7 +317,8 @@
     <h3 class="with-action"><span id="active-title">Open and pending (0)</span>
       <button class="plain small" id="close-all" title="Close every open trade at the current price and cancel every pending order" hidden>Close all</button></h3>
     <ul class="trade-list" id="active-list"></ul>
-    <h3 id="closed-title">Closed (0)</h3>
+    <h3 class="with-action"><span id="closed-title">Closed (0)</span>
+      <button class="plain small" id="undo-trade" hidden title="Take back the most recent trade, as if it was never placed (once per backtest)">Undo last trade</button></h3>
     <ul class="trade-list" id="closed-list"></ul>
 
     <section class="journal" id="journal-box">

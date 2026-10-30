@@ -306,3 +306,18 @@ def test_the_strategy_library_keeps_rules_and_version_notes_and_drops_the_rest()
             "OB Retest": {"rules": "Enter on the retest of an order block", "versions": {"v1": "first", "v2": "London only"}}}}
         (root / backtests.LIBRARY_FILE).write_text("{damaged", encoding="utf-8")
         assert backtests.load_library(root) == {"strategies": {}}
+
+
+def test_a_trade_taken_back_leaves_the_journal_and_its_id_can_be_used_again():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        backtests.save("test_journal", "bt-1", backtest([closed_trade(1), closed_trade(2)]), root)
+        assert [r["trade_id"] for r in read_journal(root)] == ["1", "2"]
+        # Trade 2 was taken back (Undo); the next trade took the id 2, at another time.
+        result = backtests.save("test_journal", "bt-1", backtest([closed_trade(1)]), root)
+        assert result["journalRemoved"] == 1 and [r["trade_id"] for r in read_journal(root)] == ["1"]
+        later = closed_trade(2, placedTime=UTC_2026_03_05_0900 + 7200, entryTime=UTC_2026_03_05_0900 + 7500, exitTime=UTC_2026_03_05_0900 + 9000)
+        result = backtests.save("test_journal", "bt-1", backtest([closed_trade(1), later]), root)
+        rows = read_journal(root)
+        assert result["journalAdded"] == 1 and [r["trade_id"] for r in rows] == ["1", "2"]
+        assert rows[1]["entry_time"].endswith("13:05:00")  # the new trade #2 (11:05 UTC, broker clock +2h), not the one taken back (11:05 broker)
