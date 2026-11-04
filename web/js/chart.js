@@ -33,6 +33,12 @@ const SUB_PANES = ["rsi", "atr"]; // panels under the chart, in this order
 const DEFAULT_VISIBLE_BARS = 160;
 const GRAB_PIXELS = 5; // how close the mouse must be to a line to drag it
 const RIGHT_GAP_BARS = 8;
+// The library does work in proportion to every candle it holds each time one candle changes
+// (measured: about 2 ms a series at 1,000 candles, 10 ms at 30,000), so a long replay slowed down
+// candle by candle. It is given only the candles around the screen: WINDOW_MARGIN either side,
+// topped up when the view comes within WINDOW_EDGE of an end, trimmed as a replay moves on.
+const WINDOW_MARGIN = 1000;
+const WINDOW_EDGE = 200;
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -75,20 +81,20 @@ class SessionBands {
     const tf = this.view.timeframe;
     if (!this.enabled || !candles || candles.length === 0 || timeframeInfo(tf).seconds > 3600) return;
 
-    const scale = this.view.chart.timeScale();
-    const range = scale.getVisibleLogicalRange();
+    const view = this.view;
+    const range = view.visibleRange();
     if (!range) return;
     const first = Math.max(0, Math.floor(range.from));
     const last = Math.min(candles.length - 1, Math.ceil(range.to));
     if (first > last) return;
-    const half = scale.options().barSpacing / 2;
+    const half = view.chart.timeScale().options().barSpacing / 2;
 
     for (const { session, start, end } of sessionsBetween(candles.time[first], candles.time[last])) {
       const i0 = Math.max(first, indexAtOrBefore(candles, start - 1) + 1); // first candle at or after the open
       const i1 = Math.min(last, indexAtOrBefore(candles, end - 1));         // last candle before the close
       if (i0 > i1) continue; // weekend or holiday
-      const x0 = scale.logicalToCoordinate(i0) - half;
-      const x1 = scale.logicalToCoordinate(i1) + half;
+      const x0 = view.xOf(i0) - half;
+      const x1 = view.xOf(i1) + half;
       ctx.fillStyle = `rgba(${rgb(session.colour)}, 0.07)`; // the colour key is in the status bar
       ctx.fillRect(x0, 0, x1 - x0, size.height);
     }
@@ -122,10 +128,9 @@ class TradeMarkers {
   }
 
   paint(ctx) {
-    const { candles, chart, series } = this.view;
+    const { candles, series } = this.view;
     if (!candles || candles.length === 0 || this.markers.length === 0) return;
-    const scale = chart.timeScale();
-    const range = scale.getVisibleLogicalRange();
+    const range = this.view.visibleRange();
     if (!range) return;
     const stacked = new Map(); // markers on the same candle and side sit one above the other
     ctx.save();
@@ -134,7 +139,7 @@ class TradeMarkers {
     for (const m of this.markers) {
       const i = indexAtOrBefore(candles, m.time);
       if (i < 0 || i < range.from - 1 || i > range.to + 1) continue;
-      const x = scale.logicalToCoordinate(i);
+      const x = this.view.xOf(i);
       const edge = series.priceToCoordinate(candles.price(m.above ? candles.high[i] : candles.low[i]));
       if (x === null || edge === null) continue;
       const key = `${i}:${m.above}`;
@@ -189,10 +194,9 @@ class TradeBoxes {
   paint(ctx) {
     const { candles, chart, series } = this.view;
     if (!candles || candles.length === 0 || this.boxes.length === 0) return;
-    const scale = chart.timeScale();
-    const range = scale.getVisibleLogicalRange();
+    const range = this.view.visibleRange();
     if (!range) return;
-    const half = scale.options().barSpacing / 2;
+    const half = chart.timeScale().options().barSpacing / 2;
     const y = (points) => series.priceToCoordinate(candles.price(points));
     ctx.save();
     ctx.font = '11px -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -200,7 +204,7 @@ class TradeBoxes {
       const i0 = indexAtOrBefore(candles, b.entryTime);
       const i1 = Math.max(i0, indexAtOrBefore(candles, b.exitTime));
       if (i0 < 0 || i1 < range.from - 1 || i0 > range.to + 1) return;
-      const xa = scale.logicalToCoordinate(i0), xb = scale.logicalToCoordinate(i1);
+      const xa = this.view.xOf(i0), xb = this.view.xOf(i1);
       const yE = y(b.entry), yS = y(b.stop), yX = y(b.exit);
       if (xa === null || xb === null || yE === null || yS === null || yX === null) return;
       const yT = b.target === null ? null : y(b.target);
@@ -262,7 +266,7 @@ class JumpMark {
     const i = indexAtOrBefore(candles, this.time);
     if (i < 0) return;
     const scale = this.view.chart.timeScale();
-    const x = scale.logicalToCoordinate(i);
+    const x = this.view.xOf(i);
     if (x === null) return;
     const left = Math.round(x - scale.options().barSpacing / 2) + 0.5; // the candle's left edge: where the day starts
     ctx.save();
@@ -309,16 +313,15 @@ class SmcLayer {
     const { candles, chart, series } = this.view;
     const r = this.result;
     if (!r || !candles || candles.length === 0) return;
-    const scale = chart.timeScale();
-    const range = scale.getVisibleLogicalRange();
+    const range = this.view.visibleRange();
     if (!range) return;
-    const half = scale.options().barSpacing / 2;
+    const half = chart.timeScale().options().barSpacing / 2;
     const y = (points) => series.priceToCoordinate(candles.price(points));
     const box = (left, right, a, b, fill, stroke) => {
       if (right < range.from - 1 || left > range.to + 1) return;
-      const x0 = scale.logicalToCoordinate(left), ya = y(a), yb = y(b);
+      const x0 = this.view.xOf(left), ya = y(a), yb = y(b);
       if (x0 === null || ya === null || yb === null) return;
-      const x1 = right === Infinity ? size.width : scale.logicalToCoordinate(right) + half;
+      const x1 = right === Infinity ? size.width : this.view.xOf(right) + half;
       const top = Math.min(ya, yb), height = Math.max(1, Math.abs(ya - yb));
       ctx.fillStyle = fill;
       ctx.fillRect(x0 - half, top, x1 - (x0 - half), height);
@@ -362,6 +365,14 @@ export class ChartView {
     this.mouseInside = false; // only the chart under the mouse tells the other where its crosshair is
     this.candles = null; // Candles of the timeframe on screen
     this.timeframe = null;
+    // The library holds candles base..end-1 only (see WINDOW_MARGIN); its logical index is ours minus base.
+    // Everything outside this class speaks in our candle indices.
+    this.base = 0;
+    this.end = 0;
+    // The library applies a new visible range only at its next animation frame; until then this is
+    // the range asked for (our indices), so nothing reads the old one against a moved window.
+    this.pending = null;
+    this.checkQueued = false;
 
     const minMove = 1 / 10 ** digits;
     this.chart = lib.createChart(container, {
@@ -442,6 +453,7 @@ export class ChartView {
     this.tradeBoxes = new TradeBoxes(this);
     this.series.attachPrimitive(this.tradeBoxes);
 
+    this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => { this.pending = null; this.checkWindowSoon(); });
     this.chart.subscribeCrosshairMove((param) => this.handleCrosshair(param));
     this.chart.subscribeClick((param) => {
       if (this.justDragged) return; // the click that ends a drag is not a click on the chart
@@ -608,12 +620,101 @@ export class ChartView {
    * The library can update its last candle or append newer ones, which is all replay needs going forward.
    */
   updateBars(from, to) {
-    for (let i = Math.max(0, from); i <= to; i++) {
-      this.series.update(this.candlePoint(i));
-      this.volume.update(this.volumePoint(i));
+    from = Math.max(0, from);
+    const shown = this.end >= from; // the window reaches the newest candles (otherwise they wait off screen)
+    if (shown) {
+      this.end = Math.max(this.end, to + 1); // first: the library's range event fires inside update()
+      for (let i = Math.max(from, this.base); i <= to; i++) {
+        this.series.update(this.candlePoint(i));
+        this.volume.update(this.volumePoint(i));
+      }
     }
-    this.drawIndicators(Math.max(0, from), to);
+    this.drawIndicators(from, to);
     this.onHover(this.barInfo(this.candles.length - 1));
+    if (shown) this.checkWindowSoon();
+  }
+
+  // ----- the window of candles the library holds (see WINDOW_MARGIN) -------------------------
+  /** The visible range in our candle indices, or null. */
+  visibleRange() {
+    if (this.pending) return { ...this.pending };
+    const r = this.chart.timeScale().getVisibleLogicalRange();
+    return r ? { from: r.from + this.base, to: r.to + this.base } : null;
+  }
+
+  /** x of candle index i (or a fractional / out-of-data position), or null. */
+  xOf(i) {
+    return this.chart.timeScale().logicalToCoordinate(i - this.base);
+  }
+
+  /** Candle index (fractional) at x, or null. */
+  indexAtX(x) {
+    const logical = this.chart.timeScale().coordinateToLogical(x);
+    return logical === null ? null : logical + this.base;
+  }
+
+  /** Show candle indices from..to, loading the candles around them first if needed. */
+  setRange(range) {
+    if (this.needsWindow(range)) this.loadWindow(range);
+    this.chart.timeScale().setVisibleLogicalRange({ from: range.from - this.base, to: range.to - this.base });
+    this.pending = { from: range.from, to: range.to };
+  }
+
+  needsWindow(range) {
+    if (!this.candles) return false;
+    return (this.base > 0 && range.from < this.base + WINDOW_EDGE) ||
+      (this.end < this.candles.length && range.to > this.end - WINDOW_EDGE) ||
+      range.to < this.base || range.from > this.end ||
+      this.end - this.base > range.to - range.from + WINDOW_MARGIN * 4; // grown far past the screen
+  }
+
+  /** Give the library the candles around `range` (our indices): WINDOW_MARGIN beyond each side. */
+  loadWindow(range) {
+    const n = this.candles.length;
+    this.base = Math.max(0, Math.min(n - 1, Math.floor(range.from) - WINDOW_MARGIN));
+    this.end = Math.max(this.base + 1, Math.min(n, Math.ceil(range.to) + WINDOW_MARGIN));
+    this.pushWindow();
+  }
+
+  /** Send the window's candles, volume and indicator points to the library. */
+  pushWindow() {
+    const count = Math.max(0, this.end - this.base);
+    const candleData = new Array(count);
+    const volumeData = new Array(count);
+    for (let k = 0; k < count; k++) {
+      candleData[k] = this.candlePoint(this.base + k);
+      volumeData[k] = this.volumePoint(this.base + k);
+    }
+    this.series.setData(candleData);
+    this.volume.setData(volumeData);
+    for (const line of this.indicatorLines) {
+      const series = this.indicatorSeries.get(line.id);
+      if (series) series.setData(this.indicatorData(line));
+    }
+  }
+
+  /** Look at the window after the library's next frame, when the range it shows is the one asked for. */
+  checkWindowSoon() {
+    if (this.checkQueued) return;
+    this.checkQueued = true;
+    requestAnimationFrame(() => { this.checkQueued = false; this.checkWindow(); });
+  }
+
+  /**
+   * Scrolled or zoomed near an end of the window: load the candles around the view. A replay moving on
+   * with the newest candle on screen: drop the candles that have fallen far behind (the newest keeps its
+   * place, so the view does not move).
+   */
+  checkWindow() {
+    const range = this.candles ? this.visibleRange() : null;
+    if (!range) return;
+    if (this.needsWindow(range)) {
+      this.setRange(range);
+    } else if (this.end === this.candles.length && range.from - this.base >= WINDOW_MARGIN * 2) {
+      this.base = Math.max(0, Math.floor(range.from) - WINDOW_MARGIN);
+      this.pushWindow();
+      this.setRange(range);
+    }
   }
 
   // ----- indicators -----------------------------------------------------------
@@ -695,11 +796,19 @@ export class ChartView {
       }
       if (series.options().title !== line.label) series.applyOptions({ title: line.label }); // changing options redoes the chart's layout
       if (fresh || from === null) {
-        series.setData(Array.from(line.values, (_, i) => this.indicatorPoint(line, i)));
-      } else {
-        for (let i = from; i <= to; i++) series.update(this.indicatorPoint(line, i));
+        series.setData(this.indicatorData(line));
+      } else if (this.end > from) { // only points inside the window (updateBars has already moved its end)
+        for (let i = Math.max(from, this.base); i <= Math.min(to, this.end - 1); i++) series.update(this.indicatorPoint(line, i));
       }
     }
+  }
+
+  /** An indicator's points for the candles in the window. */
+  indicatorData(line) {
+    const last = Math.min(this.end, line.values.length);
+    const data = [];
+    for (let i = this.base; i < last; i++) data.push(this.indicatorPoint(line, i));
+    return data;
   }
 
   /** The indicators' values at candle i, for the legend: [{ id, label, value text, colour }]. */
@@ -714,7 +823,7 @@ export class ChartView {
 
   /** Is the newest candle on screen? (Then the chart follows the replay.) */
   latestVisible() {
-    const range = this.chart.timeScale().getVisibleLogicalRange();
+    const range = this.visibleRange();
     return !!range && !!this.candles && range.to >= this.candles.length - 1;
   }
 
@@ -773,7 +882,7 @@ export class ChartView {
 
   /** UTC time of the candle at the right edge of the screen (used to keep your place). */
   rightEdgeTime() {
-    const range = this.chart.timeScale().getVisibleLogicalRange();
+    const range = this.visibleRange();
     if (!range || !this.candles || this.candles.length === 0) return null;
     const i = Math.max(0, Math.min(this.candles.length - 1, Math.floor(range.to) - RIGHT_GAP_BARS));
     return this.candles.time[i];
@@ -789,27 +898,20 @@ export class ChartView {
    * right edge, so switching timeframe keeps you at the same place in history.
    */
   setCandles(timeframeId, candles, { keepTime = null, bars = null, preserveView = false } = {}) {
+    const kept = preserveView ? this.visibleRange() : null; // same candles stay under the same pixels
     this.timeframe = timeframeId;
     this.candles = candles;
-
     const n = candles.length;
-    const candleData = new Array(n);
-    const volumeData = new Array(n);
-    for (let i = 0; i < n; i++) {
-      candleData[i] = this.candlePoint(i);
-      volumeData[i] = this.volumePoint(i);
-    }
-    const range = preserveView ? this.chart.timeScale().getVisibleLogicalRange() : null;
-    this.series.setData(candleData);
-    this.volume.setData(volumeData);
-    this.drawIndicators();
-
-    if (range) {
-      this.chart.timeScale().setVisibleLogicalRange(range); // same candles stay under the same pixels
-    } else {
+    let range = kept;
+    if (!range) {
       const last = keepTime === null ? n - 1 : Math.max(0, indexAtOrBefore(candles, keepTime));
-      this.showEndingAt(last, bars || DEFAULT_VISIBLE_BARS);
+      range = this.endingAt(last, bars || DEFAULT_VISIBLE_BARS);
     }
+    this.base = Math.max(0, Math.min(n - 1, Math.floor(range.from) - WINDOW_MARGIN));
+    this.end = Math.max(this.base + 1, Math.min(n, Math.ceil(range.to) + WINDOW_MARGIN));
+    this.drawIndicators(); // works the lines out on every candle, then sends the window's points
+    this.pushWindow();
+    this.setRange(range);
     this.onHover(this.barInfo(n - 1));
   }
 
@@ -824,7 +926,11 @@ export class ChartView {
 
   /** Put candle index `last` at the right edge with `bars` candles on screen. */
   showEndingAt(last, bars) {
-    this.chart.timeScale().setVisibleLogicalRange({ from: last - bars + RIGHT_GAP_BARS, to: last + RIGHT_GAP_BARS });
+    this.setRange(this.endingAt(last, bars));
+  }
+
+  endingAt(last, bars) {
+    return { from: last - bars + RIGHT_GAP_BARS, to: last + RIGHT_GAP_BARS };
   }
 
   /** Centre the chart on a moment in time (UTC seconds). */
@@ -833,7 +939,7 @@ export class ChartView {
     const i = Math.max(0, indexAtOrBefore(this.candles, utcSeconds));
     const bars = this.visibleBarCount();
     const half = Math.floor(bars / 2);
-    this.chart.timeScale().setVisibleLogicalRange({ from: i - half, to: i + half });
+    this.setRange({ from: i - half, to: i + half });
     return this.candles.time[i];
   }
 
@@ -847,7 +953,7 @@ export class ChartView {
     const i = Math.max(0, indexAtOrBefore(this.candles, utcSeconds));
     const bars = this.visibleBarCount();
     const lead = Math.round(bars * 0.12);
-    this.chart.timeScale().setVisibleLogicalRange({ from: i - lead, to: i - lead + bars });
+    this.setRange({ from: i - lead, to: i - lead + bars });
   }
 
   /** Draw a saved backtest's trades (see TradeBoxes); `focus` is the index of the one to stand out. */
@@ -863,7 +969,7 @@ export class ChartView {
     const span = i1 - i0 + 1;
     const bars = Math.max(this.visibleBarCount(), span + 30);
     const from = i0 - Math.round((bars - span) / 2);
-    this.chart.timeScale().setVisibleLogicalRange({ from, to: from + bars });
+    this.setRange({ from, to: from + bars });
   }
 
   // ----- the buttons at the bottom: zoom, scroll, reset (as on TradingView) ----------------
@@ -898,16 +1004,15 @@ export class ChartView {
   /** One press of a bottom button. Zoom keeps the right edge where it is, as TradingView does. */
   navigate(action) {
     if (!this.candles) return;
-    const scale = this.chart.timeScale();
-    const range = scale.getVisibleLogicalRange();
+    const range = this.visibleRange();
     if (!range) return;
     const width = range.to - range.from;
     if (action === "in" || action === "out") {
       const next = Math.max(10, Math.min(this.candles.length + 200, width * (action === "in" ? 0.8 : 1.25)));
-      scale.setVisibleLogicalRange({ from: range.to - next, to: range.to });
+      this.setRange({ from: range.to - next, to: range.to });
     } else if (action === "left" || action === "right") {
       const step = Math.max(1, Math.round(width / 8)) * (action === "left" ? -1 : 1);
-      scale.setVisibleLogicalRange({ from: range.from + step, to: range.to + step });
+      this.setRange({ from: range.from + step, to: range.to + step });
     } else if (action === "reset") {
       this.jumpMark.set(null);
       this.chart.priceScale("right").applyOptions({ autoScale: true }); // prices fitted again after a manual stretch

@@ -118,10 +118,9 @@ export class DrawingLayer {
 
   projection() {
     const v = this.view;
-    const scale = v.chart.timeScale();
     const unit = 10 ** v.digits;
     return {
-      x: (time) => scale.logicalToCoordinate(timeToLogical(v.candles, this.tfSeconds, time)) ?? 0,
+      x: (time) => v.xOf(timeToLogical(v.candles, this.tfSeconds, time)) ?? 0,
       y: (price) => v.series.priceToCoordinate(price / unit) ?? 0,
       width: this.paneWidth,
       height: this.paneHeight,
@@ -146,7 +145,7 @@ export class DrawingLayer {
       const box = v.container.getBoundingClientRect();
       point = { x: event.clientX - box.left, y: event.clientY - box.top };
     }
-    const logical = v.chart.timeScale().coordinateToLogical(point.x);
+    const logical = v.indexAtX(point.x); // a candle index (see ChartView.xOf)
     const price = v.series.coordinateToPrice(point.y);
     if (logical === null || price === null) return null;
     const raw = Math.round(price * 10 ** v.digits);
@@ -503,8 +502,7 @@ export class DrawingLayer {
   paintRuler(ctx, proj) {
     const { a, b } = this.ruler;
     const v = this.view;
-    const scale = v.chart.timeScale();
-    const xa = scale.logicalToCoordinate(a.logical), xb = scale.logicalToCoordinate(b.logical);
+    const xa = v.xOf(a.logical), xb = v.xOf(b.logical);
     const ya = proj.y(a.price), yb = proj.y(b.price);
     if (xa === null || xb === null) return;
     const up = b.price >= a.price;
