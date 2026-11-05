@@ -672,7 +672,7 @@ export class ChartView {
   loadWindow(range) {
     const n = this.candles.length;
     this.base = Math.max(0, Math.min(n - 1, Math.floor(range.from) - WINDOW_MARGIN));
-    this.end = Math.max(this.base + 1, Math.min(n, Math.ceil(range.to) + WINDOW_MARGIN));
+    this.end = Math.min(n, Math.max(this.base + 1, Math.ceil(range.to) + WINDOW_MARGIN));
     this.pushWindow();
   }
 
@@ -908,7 +908,7 @@ export class ChartView {
       range = this.endingAt(last, bars || DEFAULT_VISIBLE_BARS);
     }
     this.base = Math.max(0, Math.min(n - 1, Math.floor(range.from) - WINDOW_MARGIN));
-    this.end = Math.max(this.base + 1, Math.min(n, Math.ceil(range.to) + WINDOW_MARGIN));
+    this.end = Math.min(n, Math.max(this.base + 1, Math.ceil(range.to) + WINDOW_MARGIN));
     this.drawIndicators(); // works the lines out on every candle, then sends the window's points
     this.pushWindow();
     this.setRange(range);

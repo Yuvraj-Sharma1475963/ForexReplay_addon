@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { actionsWithout, BacktestError, rebuild, snapshot, UNDO_LIMIT, undoLastTrade } from "../js/backtest.js";
 import { Outcome } from "../js/challenge.js";
 import { Candles } from "../js/data.js";
+import { DEFAULT_FUNDED } from "../js/funded.js";
 import { DrawingStore } from "../js/drawings.js";
 import { ReplayClock } from "../js/replay.js";
 import { Side, Status, Trading } from "../js/trading.js";
@@ -102,4 +103,31 @@ test("nothing to undo before the first trade", () => {
   const m5 = market(10);
   const s = setup(m5);
   assert.throws(() => undo(s, m5), /no trade to undo/);
+});
+
+test("a trade cannot be undone once a payout was taken after it: that money is already paid", () => {
+  const DAY = 288;
+  const days = [0, 1, 2, 3, 4, 7];
+  const rows = [];
+  for (let i = 0; i < 16 * DAY; i++) {
+    const up = days.some((d) => i === d * DAY + 11);
+    rows.push([utc("2025-08-04T00:00") + i * 300, 110000, up ? 110100 : 110000, 110000, 110000, 10, 0]);
+  }
+  const m5 = Candles.fromBuffer(new Int32Array(rows.flat()).buffer);
+  const clock = new ReplayClock(m5.length);
+  const trading = new Trading({ m5, clock, ...ENV, settings: { ...SETTINGS, startingBalance: 5000 }, challenge: { ...DEFAULT_FUNDED } });
+  clock.start(6);
+  trading.reset();
+  const s = { clock, trading, startTime: m5.time[5] };
+  const goTo = (i) => clock.advance(i + 1 - clock.position);
+  for (const d of days) { // +$100 a day on 6 trading days
+    goTo(d * DAY + 10);
+    buy(trading, 100, 100);
+    goTo(d * DAY + 12);
+  }
+  goTo(14 * DAY + 5);
+  assert.equal(trading.requestPayout().amount, 600);
+  assert.throws(() => undo(s, m5), (err) => err instanceof BacktestError && /payout was taken after #6/.test(err.message));
+  buy(trading, 100, 100); // a trade placed after the payout can still be taken back
+  assert.equal(undo(s, m5).trading.withdrawn, 600);
 });

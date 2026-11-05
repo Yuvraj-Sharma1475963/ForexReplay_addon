@@ -374,6 +374,10 @@ async function boot() {
   async function undoTrade() {
     if (!clock.active || !backtests.current) throw new Error("Undo works during a replay.");
     if (!clock.live) throw new Error("Return to the live candle (End) first.");
+    const run = backtests.current;
+    if ((await store.listBacktests()).some((b) => b.parentId === run.id && b.parentJournal === run.journal)) {
+      throw new Error("This challenge already goes on as a funded account, which starts from its pass: its trades can no longer be undone.");
+    }
     const { trading: again, removed, problems } = undoLastTrade(trading, {
       m5, pipPoints: manifest.pip_points, pointValue: pointValuePerLot(manifest.digits), startTime: backtests.current.startTime,
     });

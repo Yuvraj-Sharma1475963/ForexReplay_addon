@@ -123,6 +123,13 @@ export function undoLastTrade(trading, { m5, pipPoints, pointValue, startTime })
     throw new BacktestError(`This backtest has used its ${UNDO_LIMIT} undo${UNDO_LIMIT === 1 ? "" : "s"}.`);
   }
   const last = trades[trades.length - 1];
+  // A payout taken after the trade was placed was worked out with it: taking the trade back would
+  // quietly change money already paid out (found 5 Nov 2026: a $600 payout became $500).
+  let places = 0;
+  const placedAt = trading.actions.findIndex((a) => a.kind === "place" && ++places === last.id);
+  if (placedAt >= 0 && trading.actions.slice(placedAt + 1).some((a) => a.kind === "payout")) {
+    throw new BacktestError(`A payout was taken after #${last.id} was placed, so it can no longer be undone.`);
+  }
   const at = (i) => (i === null || i === undefined ? null : m5.time[i]);
   const removed = {
     id: last.id, side: last.side, status: last.status, placedTime: at(last.placedTime), entryTime: at(last.entryTime),
