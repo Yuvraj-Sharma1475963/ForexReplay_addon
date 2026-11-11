@@ -487,6 +487,24 @@
         <td colspan="2"><select data-smc-filter><option value="atr">ATR (200)</option><option value="range">Cumulative mean range (for little data)</option></select>
           <span class="muted">a candle twice as long as this is not used as an order block</span></td></tr>
     </tbody></table>
+    <h3 class="dialog-sub">Liquidity</h3>
+    <p class="muted small">Prices where stop orders tend to rest. A level runs on while it waits; when a wick trades through it,
+      it is swept: the line turns dashed and stops on that candle with a cross.</p>
+    <table class="grid indicator-table"><tbody>
+      <tr><td><label class="check"><input type="checkbox" data-liq="day"> <i class="swatch" style="background:#ff9800"></i> Previous day high/low</label></td>
+        <td></td>
+        <td class="muted">PDH / PDL: the last completed day (17:00 New York to 17:00), shown through the next day</td></tr>
+      <tr><td><label class="check"><input type="checkbox" data-liq="week"> <i class="swatch" style="background:#e91e63"></i> Previous week high/low</label></td>
+        <td></td>
+        <td class="muted">PWH / PWL: the last completed week, shown through the next week</td></tr>
+      <tr><td><label class="check"><input type="checkbox" data-liq="asia"> <i class="swatch" style="background:#26c6da"></i> Asia high/low</label></td>
+        <td></td>
+        <td class="muted">the Tokyo session's range (09:00-18:00 Tokyo, 05:30-14:30 IST), from its close to the next session; up to H1</td></tr>
+      <tr><td><label class="check"><input type="checkbox" data-liq="equal"> <i class="swatch" style="background:#d1d4dc"></i> Equal highs/lows</label></td>
+        <td><label>Within <input type="number" data-liq-pips min="0.1" max="50" step="0.1"> pips</label></td>
+        <td class="muted">EQH / EQL: swing points with nothing beyond them in between; a swing point has
+          <input type="number" data-liq-length min="2" max="50" step="1"> candles lower (higher) on each side, so it is known that many candles later</td></tr>
+    </tbody></table>
     <div class="dialog-actions"><span class="spacer"></span>
       <button type="button" class="plain bordered" id="indicators-close">Close</button></div>
   </dialog>

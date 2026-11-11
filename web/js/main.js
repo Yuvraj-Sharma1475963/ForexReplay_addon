@@ -17,6 +17,7 @@ import { ChartView } from "./chart.js";
 import { DrawingLayer } from "./drawinglayer.js";
 import { cleanIndicators, STORAGE_KEY as KEY_INDICATORS } from "./indicators.js";
 import { cleanSmc, smcActive, STORAGE_KEY as KEY_SMC } from "./smc.js";
+import { cleanLiquidity, liquidityActive, STORAGE_KEY as KEY_LIQUIDITY } from "./liquidity.js";
 import { LayerGroup } from "./layergroup.js";
 import {
   cleanFibLevels, DrawingStore, FIB_LEVELS, fibLevelsOf, LINE_STYLES, loadSaved as loadSavedDrawings, moveHandle, PALETTE,
@@ -193,8 +194,10 @@ async function boot() {
   });
   let indicators = cleanIndicators((() => { try { return JSON.parse(recall(KEY_INDICATORS, "null")); } catch { return null; } })());
   let smc = cleanSmc((() => { try { return JSON.parse(recall(KEY_SMC, "null")); } catch { return null; } })());
+  let liquidity = cleanLiquidity((() => { try { return JSON.parse(recall(KEY_LIQUIDITY, "null")); } catch { return null; } })());
   const chart = new ChartView($("chart"), chartOptions(mainPane));
   chart.setSmc(smc);
+  chart.setLiquidity(liquidity);
   chart.setIndicators(indicators);
   mainPane.chart = chart;
 
@@ -719,6 +722,7 @@ async function boot() {
         sidePane.chart = new ChartView($("chart2"), chartOptions(sidePane));
         sidePane.chart.setSessionsVisible(sessionsOn);
         sidePane.chart.setSmc(smc);
+        sidePane.chart.setLiquidity(liquidity);
         if (review) sidePane.chart.setTradeBoxes(review.boxes, review.k);
         sidePane.chart.setIndicators(indicators);
       }
@@ -753,7 +757,10 @@ async function boot() {
     q("[data-smc-auto]").checked = smc.fvg.auto;
     q("[data-smc-mitigation]").value = smc.mitigation;
     q("[data-smc-filter]").value = smc.filter;
-    indicatorsButton.classList.toggle("active", Object.values(indicators).some((s) => s.on) || smcActive(smc));
+    for (const key of ["day", "week", "asia", "equal"]) q(`[data-liq="${key}"]`).checked = liquidity[key].on;
+    q("[data-liq-pips]").value = liquidity.equal.pips;
+    q("[data-liq-length]").value = liquidity.equal.length;
+    indicatorsButton.classList.toggle("active", Object.values(indicators).some((s) => s.on) || smcActive(smc) || liquidityActive(liquidity));
   }
   function applyIndicators() {
     const raw = {};
@@ -782,8 +789,21 @@ async function boot() {
     remember(KEY_SMC, JSON.stringify(smc));
     for (const c of [chart, sidePane.chart]) if (c) c.setSmc(smc);
   }
+  function applyLiquidity() {
+    const q = (selector) => indicatorsDialog.querySelector(selector);
+    liquidity = cleanLiquidity({
+      day: { on: q('[data-liq="day"]').checked }, week: { on: q('[data-liq="week"]').checked },
+      asia: { on: q('[data-liq="asia"]').checked },
+      equal: { on: q('[data-liq="equal"]').checked, pips: q("[data-liq-pips]").value, length: Number(q("[data-liq-length]").value) },
+    });
+    remember(KEY_LIQUIDITY, JSON.stringify(liquidity));
+    for (const c of [chart, sidePane.chart]) if (c) c.setLiquidity(liquidity);
+  }
   indicatorsDialog.addEventListener("change", (event) => {
-    if (event.target.closest("[data-smc], [data-smc-count], [data-smc-length], [data-smc-extend], [data-smc-auto], [data-smc-mitigation], [data-smc-filter]")) {
+    if (event.target.closest("[data-liq], [data-liq-pips], [data-liq-length]")) {
+      applyLiquidity();
+      renderIndicatorForm();
+    } else if (event.target.closest("[data-smc], [data-smc-count], [data-smc-length], [data-smc-extend], [data-smc-auto], [data-smc-mitigation], [data-smc-filter]")) {
       applySmc();
       renderIndicatorForm(); // a refused number snaps back to what is used
     } else {

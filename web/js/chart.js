@@ -7,6 +7,7 @@
 
 import { cleanIndicators, IndicatorEngine } from "./indicators.js";
 import { BEARISH, cleanSmc, smcActive, SmcEngine } from "./smc.js";
+import { cleanLiquidity, LABELS as LIQUIDITY_LABELS, liquidityActive, LiquidityEngine } from "./liquidity.js";
 import { rgb, sessionsBetween } from "./sessions.js";
 import { formatDate, formatDateTime, IST_OFFSET_SECONDS } from "./time.js";
 import { indexAtOrBefore, timeframe as timeframeInfo } from "./timeframes.js";
@@ -345,6 +346,76 @@ class SmcLayer {
   }
 }
 
+/**
+ * Liquidity levels (liquidity.js): a line per level with its name at the right end. A level still
+ * waiting runs to the right edge; a swept one is dashed, ends on the sweeping candle with a cross there.
+ */
+const LIQUIDITY_COLOURS = {
+  pdh: "255, 152, 0", pdl: "255, 152, 0", pwh: "233, 30, 99", pwl: "233, 30, 99",
+  asiah: "38, 198, 218", asial: "38, 198, 218", eqh: "209, 212, 220", eql: "209, 212, 220",
+};
+
+class LiquidityLayer {
+  constructor(view) {
+    this.view = view;
+    this.levels = null;
+    const draw = (target) => target.useMediaCoordinateSpace(({ context, mediaSize }) => this.paint(context, mediaSize));
+    this.views = [{ zOrder: () => "normal", renderer: () => ({ draw }) }];
+  }
+
+  attached({ requestUpdate }) { this.requestUpdate = requestUpdate; }
+  detached() { this.requestUpdate = null; }
+  updateAllViews() {}
+  paneViews() { return this.views; }
+
+  set(levels) {
+    this.levels = levels;
+    if (this.requestUpdate) this.requestUpdate();
+  }
+
+  paint(ctx, size) {
+    const { candles, chart, series } = this.view;
+    if (!this.levels || !candles || candles.length === 0) return;
+    const range = this.view.visibleRange();
+    if (!range) return;
+    const half = chart.timeScale().options().barSpacing / 2;
+    const last = candles.length - 1;
+    ctx.save();
+    ctx.font = '11px -apple-system, "Segoe UI", Roboto, sans-serif';
+    ctx.textBaseline = "bottom";
+    const placed = []; // label boxes so far: a label that would cover one moves further from its line
+    for (const l of this.levels) {
+      const to = l.to === null ? last : l.to;
+      if (to < range.from - 1 || l.from > range.to + 1) continue;
+      const xa = this.view.xOf(l.from), yy = series.priceToCoordinate(candles.price(l.price));
+      if (xa === null || yy === null) continue;
+      const xb = l.to === null ? size.width : this.view.xOf(l.to);
+      if (xb === null) continue;
+      const x0 = Math.max(-1, xa - half), x1 = Math.min(size.width + 1, l.to === null ? xb : xb + half);
+      const y = Math.round(yy) + 0.5, colour = LIQUIDITY_COLOURS[l.kind];
+      ctx.strokeStyle = `rgba(${colour}, ${l.swept ? 0.55 : 0.95})`;
+      ctx.lineWidth = l.swept ? 1 : 1.5;
+      ctx.setLineDash(l.swept ? [4, 3] : l.kind === "eqh" || l.kind === "eql" ? [2, 2] : []);
+      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+      ctx.setLineDash([]);
+      if (l.swept) { // a small cross where the wick went through
+        ctx.beginPath(); ctx.moveTo(xb - 3, y - 3); ctx.lineTo(xb + 3, y + 3); ctx.moveTo(xb - 3, y + 3); ctx.lineTo(xb + 3, y - 3); ctx.stroke();
+      }
+      const text = `${LIQUIDITY_LABELS[l.kind]}${l.count > 2 ? ` ×${l.count}` : ""}${l.swept ? " swept" : ""}`;
+      const width = ctx.measureText(text).width;
+      const right = l.to === null ? size.width - 6 : (l.swept ? xb - 6 : x1 - 2);
+      if (right - width < x0 + 2 && l.to !== null) continue; // too short to label
+      let base = l.side === 1 ? y - 2 : y + 13;
+      const hits = (b) => right - width < b.x1 && right > b.x0 && base - 11 < b.y1 && base > b.y0;
+      for (let k = 0; k < 4 && placed.some(hits); k++) base += l.side === 1 ? -12 : 12;
+      placed.push({ x0: right - width, x1: right, y0: base - 11, y1: base });
+      ctx.fillStyle = `rgba(${colour}, ${l.swept ? 0.7 : 1})`;
+      ctx.fillText(text, right - width, base);
+    }
+    ctx.restore();
+  }
+}
+
 export class ChartView {
   /**
    * @param {HTMLElement} container  element the chart fills
@@ -448,6 +519,10 @@ export class ChartView {
     this.smcEngine = new SmcEngine(); // works out only what a replay step changed
     this.smc = new SmcLayer(this); // over the session bands, behind the candles
     this.series.attachPrimitive(this.smc);
+    this.liquiditySettings = cleanLiquidity(null);
+    this.liquidityEngine = new LiquidityEngine();
+    this.liquidity = new LiquidityLayer(this);
+    this.series.attachPrimitive(this.liquidity);
     this.jumpMark = new JumpMark(this);
     this.series.attachPrimitive(this.jumpMark);
     this.tradeBoxes = new TradeBoxes(this);
@@ -738,6 +813,19 @@ export class ChartView {
     this.smc.set(this.smcEngine.compute(this.candles, this.smcSettings, from));
   }
 
+  /** Which liquidity levels to show (see liquidity.js). */
+  setLiquidity(settings) {
+    this.liquiditySettings = cleanLiquidity(settings);
+    if (this.candles) this.drawLiquidity();
+  }
+
+  /** Liquidity levels from the candles on screen; with `from`, only from that candle on is worked out again. */
+  drawLiquidity(from = null) {
+    if (!liquidityActive(this.liquiditySettings)) { this.liquidity.set(null); return; }
+    const barSeconds = timeframeInfo(this.timeframe).seconds;
+    this.liquidity.set(this.liquidityEngine.compute(this.candles, this.liquiditySettings, { barSeconds, pipPoints: this.pipPoints }, from));
+  }
+
   get pipPoints() { return 10 ** (this.digits - 4); } // EURUSD: 10 points to a pip
 
   indicatorPoint(line, i) {
@@ -755,6 +843,7 @@ export class ChartView {
    */
   drawIndicators(from = null, to = null) {
     this.drawSmc(from);
+    this.drawLiquidity(from);
     let lines = this.indicatorEngine.compute(this.candles, this.indicatorSettings, from);
     // ADR levels are for intraday charts: on D1 a day is one candle, so they say nothing (lines and legend alike).
     if (this.timeframe === "D1") lines = lines.filter((l) => l.id !== "adrHigh" && l.id !== "adrLow");
