@@ -1,7 +1,7 @@
 # 0022: Every candle in the exports, and a backfill for older years
 
 - **Date:** 14 Nov 2026
-- **Status:** accepted
+- **Status:** accepted; the default backfill source is HistData.com since [0023](0023-histdata-history.md)
 - **Decided by:** Yuvraj Sharma (wanted past data too), with Claude on how
 
 ## What changed

@@ -105,7 +105,7 @@ def cmd_update(args) -> None:
 def cmd_backfill(args) -> None:
     from .updater import run_backfill
 
-    result = run_backfill(args.start, push_to_github=args.push)
+    result = run_backfill(args.start, push_to_github=args.push, source=args.source)
     print(result["text"])
     if not result["ok"]:
         sys.exit(1)
@@ -168,8 +168,10 @@ def build_parser() -> argparse.ArgumentParser:
     upd.add_argument("--push", action="store_true", help="commit the data files and push them to GitHub (main only)")
     upd.set_defaults(func=cmd_update)
 
-    back = sub.add_parser("backfill", help="v2: add older candles from the MT5 terminal, before the first one in data/")
+    back = sub.add_parser("backfill", help="v2: add older candles (HistData.com or MT5), before the first one in data/")
     back.add_argument("--from", dest="start", required=True, help="first server date to fetch, e.g. 2023-01-01")
+    back.add_argument("--source", choices=["histdata", "mt5"], default="histdata",
+                      help="histdata: free M1 history from HistData.com (default); mt5: the MT5 terminal on this computer")
     back.add_argument("--push", action="store_true", help="commit the data files and push them to GitHub (main only)")
     back.set_defaults(func=cmd_backfill)
 

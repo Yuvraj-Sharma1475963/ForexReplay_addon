@@ -5,7 +5,8 @@ Nothing runs by itself: the "Update data" button in the app (POST /api/update) o
     python -m forex_replay update                  MT5 if it can be reached, otherwise Yahoo
     python -m forex_replay update --source mt5     only the MT5 terminal on this computer
     python -m forex_replay update --source yahoo   only Yahoo Finance (what the nightly cloud job uses)
-    python -m forex_replay backfill --from 2023-01-01   older candles from MT5, before the first one in data/
+    python -m forex_replay backfill --from 2023-01-01   older candles from HistData.com, before the first one in data/
+    ... --source mt5                               the same from the MT5 terminal instead
     ... --push                                     then commit the data files and push them to GitHub
 
 MT5 hands out only as many candles per symbol and timeframe as its "Max bars in chart" setting
@@ -24,8 +25,8 @@ Two sources, never mixed up:
 
 Before anything is kept it is checked ("auto-correct"): candles are sorted, duplicates dropped,
 weekend candles dropped, high and low widened to hold the open and close, the candle still
-forming dropped, and spikes (a range over 15 times the median, or a gap of over 1% from the
-previous close) dropped. Each fix is counted and printed.
+forming dropped, and spikes (a lone wick over 15 times the median range with the price back
+where it was, or a gap of over 1% from the previous close) dropped. Each fix is counted and printed.
 """
 from __future__ import annotations
 
@@ -40,6 +41,7 @@ from .datapipe import DATA_DIR, EURUSD, SymbolSpec, find_exports, read_mt5_csv, 
 
 AUTO_FILE = "EURUSD_M5_mt5_auto.csv"  # wins over every other export
 HISTORY_FILE = "EURUSD_M5_mt5_history.csv"  # older candles fetched with `backfill`, an ordinary export
+HISTDATA_FILE = "EURUSD_M5_histdata.csv"  # older candles from HistData.com, loses to every broker export
 FILL_FILE = "EURUSD_M5_yahoo_fill.csv"  # loses to every other export
 HEADER = ["<DATE>", "<TIME>", "<OPEN>", "<HIGH>", "<LOW>", "<CLOSE>", "<TICKVOL>", "<VOL>", "<SPREAD>"]
 OVERLAP = timedelta(days=2)  # read again the last two days, so a day cut short last time is completed
@@ -83,7 +85,15 @@ def clean(df: pd.DataFrame, bar_seconds: int = 300, now_server: pd.Timestamp | N
     median = rng.rolling(48, min_periods=12, center=True).median().fillna(rng.median())
     prev_close = df["close"].shift(1)
     gap = (df["open"] - prev_close).abs() / prev_close
-    spike = (rng > SPIKE_RANGE * median.clip(lower=1e-5)) | (gap > SPIKE_GAP)
+    gap[pd.Series(df.index, index=df.index).diff() > pd.Timedelta(hours=12)] = 0  # a Monday open may really gap
+    # A bad tick is a lone wick: a huge range with the price back where it was by the close or the next
+    # open. A news candle (CPI, NFP) is just as big but moves the price, so it stays. The median is at
+    # least a pip, so the tiny ranges of a holiday morning do not make ordinary candles look huge.
+    before = prev_close.fillna(df["open"])
+    after = df["open"].shift(-1).fillna(df["close"])
+    back = np.minimum((df["close"] - before).abs(), (after - before).abs()) < rng / 4
+    huge = rng > SPIKE_RANGE * median.clip(lower=1e-4)
+    spike = (huge & (back | (rng / df["low"] > SPIKE_GAP))) | (gap > SPIKE_GAP)  # over 1% in five minutes is not news
     fixes["spikes"] = int(spike.sum())
     return df[~spike], fixes
 
@@ -268,42 +278,62 @@ def fetch_mt5_history(start_server: pd.Timestamp, end_server: pd.Timestamp, symb
     return df[~df.index.duplicated(keep="last")].sort_index(), name
 
 
-def backfill(start: str, data_dir: Path = DATA_DIR, spec: SymbolSpec = EURUSD, history_fetch=fetch_mt5_history) -> dict:
-    """Add MT5 candles from `start` up to the first candle already in data/.
+def first_spread(df: pd.DataFrame | None, days: int = 20) -> int:
+    """The broker's typical spread in points over the first `days` of real candles."""
+    if df is None or df.empty or "spread" not in df:
+        return 0
+    early = df[df.index <= df.index.min() + pd.Timedelta(days=days)]["spread"].fillna(0)
+    return int(np.median(early)) if len(early) else 0
+
+
+def backfill(start: str, data_dir: Path = DATA_DIR, spec: SymbolSpec = EURUSD, history_fetch=None, source: str = "histdata") -> dict:
+    """Add older candles (HistData.com, or the MT5 terminal) from `start` up to the first candle already in data/.
     Returns {source, added, first, until, fixes, file, notes}."""
+    if source not in ("histdata", "mt5"):
+        raise RuntimeError(f"unknown source {source!r}: use histdata or mt5")
     real, _ = read_existing(data_dir, spec)
     if real is None or real.empty:
         raise RuntimeError("there are no candles in data/ yet: run an update first")
     first = real.index.min()
     start_ts = pd.Timestamp(start)
+    file = HISTDATA_FILE if source == "histdata" else HISTORY_FILE
+    label = "HistData.com" if source == "histdata" else "MT5 history"
     if start_ts >= first:
-        return {"source": "MT5 history", "added": 0, "first": first, "until": first, "fixes": {}, "file": HISTORY_FILE,
+        return {"source": label, "added": 0, "first": first, "until": first, "fixes": {}, "file": file,
                 "notes": [f"data/ already starts on {first:%d %b %Y}."]}
-    df, name = history_fetch(start_ts, first)
+    if source == "histdata":
+        from .histdata import fetch_histdata
+
+        spread = first_spread(real)
+        df, name = (history_fetch or (lambda a, b: fetch_histdata(a, b, spec.symbol, spread=spread)))(start_ts, first)
+    else:
+        df, name = (history_fetch or fetch_mt5_history)(start_ts, first)
     df, fixes = clean(df, spec.bar_seconds)
     df = df[df.index < first]
     notes = []
-    if df.empty:
+    if df.empty and source == "histdata":
+        notes.append("HistData.com gave no older candles.")
+    elif df.empty:
         notes.append("MT5 gave no older candles. If 'Max bars in chart' (Tools > Options > Charts) is 100000, "
                      "set it to Unlimited, restart MetaTrader 5 and try again.")
     elif df.index.min() - start_ts > pd.Timedelta(days=7):
-        notes.append(f"MT5 only had candles from {df.index.min():%d %b %Y}: the broker's history "
-                     "(or the 'Max bars in chart' setting) stops there.")
-    path = data_dir / HISTORY_FILE
+        notes.append(f"{label} only had candles from {df.index.min():%d %b %Y}"
+                     + ("." if source == "histdata" else ": the broker's history (or the 'Max bars in chart' setting) stops there."))
+    path = data_dir / file
     before = read_mt5_csv(path) if path.exists() else None
     if not df.empty:
         write_export(df, path, keep=before)
-    return {"source": f"MT5 history ({name})", "added": int(len(df)), "first": df.index.min() if not df.empty else first,
-            "until": first, "fixes": fixes, "file": HISTORY_FILE, "notes": notes}
+    return {"source": name if source == "histdata" else f"MT5 history ({name})", "added": int(len(df)),
+            "first": df.index.min() if not df.empty else first, "until": first, "fixes": fixes, "file": file, "notes": notes}
 
 
 def run_backfill(start: str, push_to_github: bool = False, data_dir: Path = DATA_DIR, out_root: Path | None = None,
-                 filler=None, pusher=None) -> dict:
+                 filler=None, pusher=None, source: str = "histdata") -> dict:
     """Older candles, then the web data rebuilt and optionally pushed, as run_update does. Never raises."""
     from .datapipe import WEB_DATA_DIR, build, summary
 
     try:
-        result = (filler or backfill)(start, data_dir=data_dir)
+        result = filler(start, data_dir=data_dir) if filler else backfill(start, data_dir=data_dir, source=source)
     except RuntimeError as err:
         return {"ok": False, "added": 0, "text": f"Not backfilled: {err}"}
     fixes = ", ".join(f"{k.replace('_', ' ')} {v}" for k, v in result["fixes"].items() if v) or "none needed"
@@ -359,7 +389,7 @@ def push(data_dir: Path, message: str, run=subprocess.run) -> str:
     branch = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
     if branch != "main":
         return f"not pushed: the project is on branch '{branch}', not main (the data is updated on this computer)"
-    files = [f"data/{name}" for name in (AUTO_FILE, FILL_FILE, HISTORY_FILE) if (data_dir / name).exists() or git("ls-files", f"data/{name}").stdout.strip()]
+    files = [f"data/{name}" for name in (AUTO_FILE, FILL_FILE, HISTORY_FILE, HISTDATA_FILE) if (data_dir / name).exists() or git("ls-files", f"data/{name}").stdout.strip()]
     git("add", "--all", "--", *files)
     if not git("diff", "--cached", "--name-only", "--", *files).stdout.strip():
         return "nothing new to push"

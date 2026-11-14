@@ -154,7 +154,7 @@ def test_backfill_adds_older_candles_before_the_first_one_and_the_build_keeps_th
             asked.append((start, end))
             return pd.concat([week_before, candles("2026-09-07 00:00", 10)]), "EURUSD"  # overlap is ignored
 
-        result = backfill("2026-08-31", data_dir=data, history_fetch=history)
+        result = backfill("2026-08-31", data_dir=data, history_fetch=history, source="mt5")
         assert asked == [(pd.Timestamp("2026-08-31"), pd.Timestamp("2026-09-07 00:00"))]
         assert result["added"] == 288 * 5 and result["first"] == pd.Timestamp("2026-08-31 00:00") and not result["notes"]
         assert (data / HISTORY_FILE).exists()
@@ -166,5 +166,38 @@ def test_backfill_adds_older_candles_before_the_first_one_and_the_build_keeps_th
 
         empty = run_backfill("2026-01-01", data_dir=data, out_root=Path(tmp) / "web",
                              filler=lambda start, data_dir: backfill(start, data_dir=data_dir,
+                                                                     source="mt5",
                                                                      history_fetch=lambda a, b: (candles("2026-08-31", 0), "EURUSD")))
         assert empty["ok"] and empty["added"] == 0 and "Max bars in chart" in empty["text"]
+
+
+def test_histdata_clock_reads_as_new_york_standard_time_with_european_daylight_saving():
+    import io
+    import zipfile
+
+    from forex_replay.histdata import fetch_histdata, read_zip
+
+    rows = ["20250303 120000;1.040000;1.040100;1.039900;1.040050;0",  # winter: 17:00 UTC, server 19:00
+            "20250312 120000;1.090000;1.090100;1.089900;1.090050;0",  # US summer, Europe not yet: 17:00 UTC, server 20:00
+            "20250312 120100;1.090050;1.090300;1.089800;1.090200;0",
+            "20250602 120000;1.140000;1.140100;1.139900;1.140050;0"]  # both summer: 16:00 UTC, server 19:00
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("DAT_ASCII_EURUSD_M1_2025.csv", "\n".join(rows) + "\n")
+    m1 = read_zip(buf.getvalue())
+    assert [str(t) for t in m1.index] == ["2025-03-03 19:00:00", "2025-03-12 20:00:00", "2025-03-12 20:01:00", "2025-06-02 19:00:00"]
+    df, name = fetch_histdata(pd.Timestamp("2025-03-01"), pd.Timestamp("2025-06-01"), spread=3,
+                              downloader=lambda pair, year, month=None: buf.getvalue(), today=pd.Timestamp("2026-01-01"))
+    assert name == "HistData.com" and list(df.index.astype(str)) == ["2025-03-03 19:00:00", "2025-03-12 20:00:00"]
+    bar = df.iloc[1]
+    assert (bar.open, bar.high, bar.low, bar.close, bar.volume, bar.spread) == (1.09, 1.0903, 1.0898, 1.0902, 0, 3)
+
+
+def test_clean_keeps_a_news_candle_and_drops_a_lone_wick():
+    df = candles("2026-09-08 10:00", 60, step=0.00001)  # a quiet morning: 1.5-point candles
+    news, wick = df.index[30], df.index[45]
+    df.loc[news, ["high", "low", "close"]] = [df.loc[news, "open"] + 0.0001, df.loc[news, "open"] - 0.0060, df.loc[news, "open"] - 0.0055]
+    df.loc[df.index[31]:, ["open", "high", "low", "close"]] -= 0.0055  # the price stays down after the news
+    df.loc[wick, "high"] = df.loc[wick, "open"] + 0.0050  # a bad tick: up and straight back
+    out, fixes = clean(df)
+    assert news in out.index and wick not in out.index and fixes["spikes"] == 1
