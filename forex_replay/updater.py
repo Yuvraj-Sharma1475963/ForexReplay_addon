@@ -5,7 +5,12 @@ Nothing runs by itself: the "Update data" button in the app (POST /api/update) o
     python -m forex_replay update                  MT5 if it can be reached, otherwise Yahoo
     python -m forex_replay update --source mt5     only the MT5 terminal on this computer
     python -m forex_replay update --source yahoo   only Yahoo Finance (what the nightly cloud job uses)
+    python -m forex_replay backfill --from 2023-01-01   older candles from MT5, before the first one in data/
     ... --push                                     then commit the data files and push them to GitHub
+
+MT5 hands out only as many candles per symbol and timeframe as its "Max bars in chart" setting
+(Tools > Options > Charts); at the usual 100,000 that is about 15 months of M5. For older years set it
+to Unlimited and restart MetaTrader 5.
 
 Two sources, never mixed up:
 
@@ -34,6 +39,7 @@ import pandas as pd
 from .datapipe import DATA_DIR, EURUSD, SymbolSpec, find_exports, read_mt5_csv, utc_to_server
 
 AUTO_FILE = "EURUSD_M5_mt5_auto.csv"  # wins over every other export
+HISTORY_FILE = "EURUSD_M5_mt5_history.csv"  # older candles fetched with `backfill`, an ordinary export
 FILL_FILE = "EURUSD_M5_yahoo_fill.csv"  # loses to every other export
 HEADER = ["<DATE>", "<TIME>", "<OPEN>", "<HIGH>", "<LOW>", "<CLOSE>", "<TICKVOL>", "<VOL>", "<SPREAD>"]
 OVERLAP = timedelta(days=2)  # read again the last two days, so a day cut short last time is completed
@@ -220,6 +226,99 @@ def update(source: str = "auto", data_dir: Path = DATA_DIR, spec: SymbolSpec = E
             "fixes": fixes, "file": FILL_FILE, "notes": notes}
 
 
+def fetch_mt5_history(start_server: pd.Timestamp, end_server: pd.Timestamp, symbol: str = "EURUSD",
+                      chunk: pd.Timedelta = pd.Timedelta(days=60), tries: int = 3, sleep=None) -> tuple[pd.DataFrame, str]:
+    """Older M5 candles from the MT5 terminal, [start, end) on the server clock, fetched in chunks. The terminal
+    downloads old history from the broker when asked, so a chunk that comes back empty is asked for again."""
+    import time
+
+    try:
+        import MetaTrader5 as mt5
+    except ImportError as err:
+        raise RuntimeError("the MetaTrader5 package is not installed (pip install MetaTrader5)") from err
+    if not mt5.initialize():
+        raise RuntimeError(f"MT5 is not reachable ({mt5.last_error()[1]}). Open MetaTrader 5 and log in.")
+    parts = []
+    try:
+        names = [s.name for s in (mt5.symbols_get(f"{symbol}*") or [])]
+        name = symbol if symbol in names else next((n for n in names if n.upper().startswith(symbol)), None)
+        if not name or not mt5.symbol_select(name, True):
+            raise RuntimeError(f"this broker has no {symbol} symbol")
+        a = start_server
+        while a < end_server:
+            b = min(a + chunk, end_server)
+            rates = None
+            for _ in range(tries):
+                rates = mt5.copy_rates_range(name, mt5.TIMEFRAME_M5, a.to_pydatetime(), b.to_pydatetime())
+                # outside the history it holds, MT5 answers with its oldest candle: that is not this chunk
+                if rates is not None and len(rates) and a <= pd.Timestamp(int(rates[-1]["time"]), unit="s") < b:
+                    break
+                (sleep or time.sleep)(2)
+            if rates is not None and len(rates):
+                df = pd.DataFrame(rates)
+                df.index = pd.DatetimeIndex(pd.to_datetime(df["time"], unit="s"), name="server_time")
+                parts.append(df.rename(columns={"tick_volume": "volume"})[["open", "high", "low", "close", "volume", "spread"]])
+            a = b
+    finally:
+        mt5.shutdown()
+    if not parts:
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume", "spread"]), name
+    df = pd.concat(parts)
+    df = df[(df.index >= start_server) & (df.index < end_server)]
+    return df[~df.index.duplicated(keep="last")].sort_index(), name
+
+
+def backfill(start: str, data_dir: Path = DATA_DIR, spec: SymbolSpec = EURUSD, history_fetch=fetch_mt5_history) -> dict:
+    """Add MT5 candles from `start` up to the first candle already in data/.
+    Returns {source, added, first, until, fixes, file, notes}."""
+    real, _ = read_existing(data_dir, spec)
+    if real is None or real.empty:
+        raise RuntimeError("there are no candles in data/ yet: run an update first")
+    first = real.index.min()
+    start_ts = pd.Timestamp(start)
+    if start_ts >= first:
+        return {"source": "MT5 history", "added": 0, "first": first, "until": first, "fixes": {}, "file": HISTORY_FILE,
+                "notes": [f"data/ already starts on {first:%d %b %Y}."]}
+    df, name = history_fetch(start_ts, first)
+    df, fixes = clean(df, spec.bar_seconds)
+    df = df[df.index < first]
+    notes = []
+    if df.empty:
+        notes.append("MT5 gave no older candles. If 'Max bars in chart' (Tools > Options > Charts) is 100000, "
+                     "set it to Unlimited, restart MetaTrader 5 and try again.")
+    elif df.index.min() - start_ts > pd.Timedelta(days=7):
+        notes.append(f"MT5 only had candles from {df.index.min():%d %b %Y}: the broker's history "
+                     "(or the 'Max bars in chart' setting) stops there.")
+    path = data_dir / HISTORY_FILE
+    before = read_mt5_csv(path) if path.exists() else None
+    if not df.empty:
+        write_export(df, path, keep=before)
+    return {"source": f"MT5 history ({name})", "added": int(len(df)), "first": df.index.min() if not df.empty else first,
+            "until": first, "fixes": fixes, "file": HISTORY_FILE, "notes": notes}
+
+
+def run_backfill(start: str, push_to_github: bool = False, data_dir: Path = DATA_DIR, out_root: Path | None = None,
+                 filler=None, pusher=None) -> dict:
+    """Older candles, then the web data rebuilt and optionally pushed, as run_update does. Never raises."""
+    from .datapipe import WEB_DATA_DIR, build, summary
+
+    try:
+        result = (filler or backfill)(start, data_dir=data_dir)
+    except RuntimeError as err:
+        return {"ok": False, "added": 0, "text": f"Not backfilled: {err}"}
+    fixes = ", ".join(f"{k.replace('_', ' ')} {v}" for k, v in result["fixes"].items() if v) or "none needed"
+    lines = [f"{result['source']}: {result['added']} older candles, from {result['first']:%a %d %b %Y %H:%M} "
+             f"to {result['until']:%d %b %Y} server time.", f"Checks and fixes: {fixes}.", *result["notes"]]
+    try:
+        manifest, report = build(data_dir=data_dir, out_root=out_root or WEB_DATA_DIR)
+        lines.append(summary(manifest, report))
+    except (ValueError, FileNotFoundError) as err:
+        return {"ok": False, "added": result["added"], "text": "\n".join(lines + [f"The data was not rebuilt: {err}"])}
+    if push_to_github and result["added"]:
+        lines.append((pusher or push)(data_dir, f"Data: EURUSD M5 history from {result['first']:%d %b %Y} ({result['source']})"))
+    return {"ok": True, "added": result["added"], "text": "\n".join(lines)}
+
+
 def describe(result: dict) -> str:
     fixes = ", ".join(f"{k.replace('_', ' ')} {v}" for k, v in result["fixes"].items() if v) or "none needed"
     last = result["last"].strftime("%a %d %b %Y %H:%M server time") if result["last"] is not None else "–"
@@ -260,7 +359,7 @@ def push(data_dir: Path, message: str, run=subprocess.run) -> str:
     branch = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
     if branch != "main":
         return f"not pushed: the project is on branch '{branch}', not main (the data is updated on this computer)"
-    files = [f"data/{name}" for name in (AUTO_FILE, FILL_FILE) if (data_dir / name).exists() or git("ls-files", f"data/{name}").stdout.strip()]
+    files = [f"data/{name}" for name in (AUTO_FILE, FILL_FILE, HISTORY_FILE) if (data_dir / name).exists() or git("ls-files", f"data/{name}").stdout.strip()]
     git("add", "--all", "--", *files)
     if not git("diff", "--cached", "--name-only", "--", *files).stdout.strip():
         return "nothing new to push"

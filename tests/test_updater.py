@@ -141,3 +141,30 @@ def test_the_update_button_route_takes_json_only_and_one_at_a_time(monkeypatch):
         finally:
             srv.shutdown()
             srv.server_close()
+
+
+def test_backfill_adds_older_candles_before_the_first_one_and_the_build_keeps_them():
+    from forex_replay.updater import HISTORY_FILE, backfill, run_backfill
+    with tempfile.TemporaryDirectory() as tmp:
+        data = export_dir(tmp)  # Mon 7 to Fri 11 Sep 2026
+        week_before = candles("2026-08-31 00:00", 288 * 5, price=1.15)  # Mon 31 Aug to Fri 4 Sep
+        asked = []
+
+        def history(start, end):
+            asked.append((start, end))
+            return pd.concat([week_before, candles("2026-09-07 00:00", 10)]), "EURUSD"  # overlap is ignored
+
+        result = backfill("2026-08-31", data_dir=data, history_fetch=history)
+        assert asked == [(pd.Timestamp("2026-08-31"), pd.Timestamp("2026-09-07 00:00"))]
+        assert result["added"] == 288 * 5 and result["first"] == pd.Timestamp("2026-08-31 00:00") and not result["notes"]
+        assert (data / HISTORY_FILE).exists()
+        manifest, _ = datapipe.build(data_dir=data, out_root=Path(tmp) / "web")  # no start date: everything
+        assert manifest["bars"] == 288 * 10
+
+        nothing = backfill("2026-09-08", data_dir=data, history_fetch=history)  # already covered
+        assert nothing["added"] == 0 and len(asked) == 1
+
+        empty = run_backfill("2026-01-01", data_dir=data, out_root=Path(tmp) / "web",
+                             filler=lambda start, data_dir: backfill(start, data_dir=data_dir,
+                                                                     history_fetch=lambda a, b: (candles("2026-08-31", 0), "EURUSD")))
+        assert empty["ok"] and empty["added"] == 0 and "Max bars in chart" in empty["text"]

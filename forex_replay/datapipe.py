@@ -247,7 +247,7 @@ def find_exports(data_dir: Path = DATA_DIR, symbol: str = "EURUSD", timeframe: s
     return sorted(files, key=lambda p: (rank(p), p.stat().st_mtime))
 
 
-def build(start: str = "2025-08-01", spec: SymbolSpec = EURUSD, data_dir: Path = DATA_DIR,
+def build(start: str | None = None, spec: SymbolSpec = EURUSD, data_dir: Path = DATA_DIR,
           out_root: Path = WEB_DATA_DIR, files: list[Path] | None = None) -> tuple[dict, dict]:
     files = files if files is not None else find_exports(data_dir, spec.symbol, spec.timeframe)
     if not files:
@@ -255,9 +255,10 @@ def build(start: str = "2025-08-01", spec: SymbolSpec = EURUSD, data_dir: Path =
 
     merged, replaced = merge_exports([read_mt5_csv(f) for f in files])
     merged.index = server_to_utc(merged.index)
-    merged = merged[merged.index >= pd.Timestamp(start, tz="UTC")]
+    if start:  # None keeps every candle the exports have
+        merged = merged[merged.index >= pd.Timestamp(start, tz="UTC")]
     if merged.empty:
-        raise ValueError(f"No candles on or after {start}")
+        raise ValueError(f"No candles on or after {start}" if start else "The exports have no candles")
 
     report = quality_report(merged, spec, replaced)
     if report["bad_ohlc_candles"]:

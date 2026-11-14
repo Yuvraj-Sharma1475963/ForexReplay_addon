@@ -102,6 +102,15 @@ def cmd_update(args) -> None:
         sys.exit(1)
 
 
+def cmd_backfill(args) -> None:
+    from .updater import run_backfill
+
+    result = run_backfill(args.start, push_to_github=args.push)
+    print(result["text"])
+    if not result["ok"]:
+        sys.exit(1)
+
+
 def cmd_site(args) -> None:
     from .site import build_site
 
@@ -150,7 +159,7 @@ def build_parser() -> argparse.ArgumentParser:
     app.set_defaults(func=cmd_app)
 
     data = sub.add_parser("data", help="v2: rebuild market data from the MT5 exports in data/")
-    data.add_argument("--start", default="2025-08-01", help="first UTC date to keep")
+    data.add_argument("--start", default=None, help="first UTC date to keep (default: every candle in the exports)")
     data.set_defaults(func=cmd_data)
 
     upd = sub.add_parser("update", help="v2: add the newest candles (MT5 on this computer, else Yahoo), checked")
@@ -158,6 +167,11 @@ def build_parser() -> argparse.ArgumentParser:
                      help="auto: MT5 if it can be reached, otherwise Yahoo Finance for the missing days")
     upd.add_argument("--push", action="store_true", help="commit the data files and push them to GitHub (main only)")
     upd.set_defaults(func=cmd_update)
+
+    back = sub.add_parser("backfill", help="v2: add older candles from the MT5 terminal, before the first one in data/")
+    back.add_argument("--from", dest="start", required=True, help="first server date to fetch, e.g. 2023-01-01")
+    back.add_argument("--push", action="store_true", help="commit the data files and push them to GitHub (main only)")
+    back.set_defaults(func=cmd_backfill)
 
     site = sub.add_parser("site", help="v2: build the app as a static website (backtests saved in the browser)")
     site.add_argument("--out", default="_site", help="folder to write the website into")

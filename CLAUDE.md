@@ -78,6 +78,6 @@ Read `docs/decisions/` before changing how something works; each record says why
 
 ## Facts about the data and account
 
-- Data: EURUSD M5 only, 1 Aug 2025 to 11 Sep 2026, exported from MT5 into `data/`. M1 was not wanted at the start.
+- Data: EURUSD M5 only, exported from MT5 into `data/` (from 25 Feb 2025 since decision 0022; older years via `python -m forex_replay backfill`). M1 was not wanted at the start.
 - The export records zero spread on about 95% of candles. Commission is $4 per lot (his broker's figure; treated as round turn, not yet confirmed whether it is per side).
 - Chart clock is India time.
