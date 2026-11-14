@@ -201,3 +201,28 @@ def test_clean_keeps_a_news_candle_and_drops_a_lone_wick():
     df.loc[wick, "high"] = df.loc[wick, "open"] + 0.0050  # a bad tick: up and straight back
     out, fixes = clean(df)
     assert news in out.index and wick not in out.index and fixes["spikes"] == 1
+
+
+def test_histdata_hours_it_lacks_are_filled_from_the_other_source_and_nothing_else():
+    import io
+    import zipfile
+
+    from forex_replay.histdata import fetch_histdata
+
+    stamps = pd.date_range("2025-06-02 03:00", "2025-06-02 08:59", freq="1min")  # stamps; server = +7h
+    stamps = stamps[(stamps.hour != 5)]  # 05:00-05:59 missing (server 12:00-12:59)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("x.csv", "\n".join(f"{t:%Y%m%d %H%M%S};1.140000;1.140100;1.139900;1.140050;0" for t in stamps) + "\n")
+    asked = []
+
+    def filler(pair, days):
+        asked.append(days)
+        idx = pd.date_range("2025-06-02 10:00", "2025-06-02 15:59", freq="1min")  # server clock, overlaps HistData
+        return pd.DataFrame({"open": 1.2, "high": 1.2, "low": 1.2, "close": 1.2}, index=idx)
+
+    df, name = fetch_histdata(pd.Timestamp("2025-06-01"), pd.Timestamp("2025-06-03"), downloader=lambda *a, **k: buf.getvalue(),
+                              today=pd.Timestamp("2026-01-01"), filler=filler)
+    assert asked == [[pd.Timestamp("2025-06-02")]] and "Dukascopy for 1 missing hours" in name
+    assert (df.loc["2025-06-02 12:00":"2025-06-02 12:55", "close"] == 1.2).all() and len(df.loc["2025-06-02 12:00":"2025-06-02 12:55"]) == 12
+    assert (df.drop(df.loc["2025-06-02 12:00":"2025-06-02 12:55"].index)["close"] == 1.14005).all()

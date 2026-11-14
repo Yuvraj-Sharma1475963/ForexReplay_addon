@@ -78,6 +78,6 @@ Read `docs/decisions/` before changing how something works; each record says why
 
 ## Facts about the data and account
 
-- Data: EURUSD M5 only, exported from MT5 into `data/` from 25 Feb 2025 (decision 0022); 2 Jan 2023 to 25 Feb 2025 from HistData.com via `python -m forex_replay backfill` (decision 0023), which loses every overlap to the broker's files. M1 was not wanted at the start.
+- Data: EURUSD M5 only, exported from MT5 into `data/`: the broker's candles from 1 Jan 2024 (decisions 0022, 0023); 2023 from HistData.com (holes filled from Dukascopy) via `python -m forex_replay backfill` (decision 0023), which loses every overlap to the broker's files. M1 was not wanted at the start.
 - The export records zero spread on about 95% of candles. Commission is $4 per lot (his broker's figure; treated as round turn, not yet confirmed whether it is per side).
 - Chart clock is India time.

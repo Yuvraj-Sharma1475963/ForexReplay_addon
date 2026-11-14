@@ -32,3 +32,10 @@ No candles were missing from the broker's own files, so nothing there needs fetc
 ## Speed
 
 47 monthly files, 8 MB of web data (3.7 MB before). Locally all of them load in about 0.14 s; a replay step in Feb 2024 takes about 1 ms.
+
+## Update, same day: broker candles for 2024, Dukascopy for HistData's holes
+
+HistData turned out to lack whole hours: 593 one-hour and 85 two-hour holes, most of them Feb-Jul 2023, which showed as gaps between candles on the chart. Two fixes:
+
+- With "Max bars in chart" set to Unlimited (and MT5 restarted), `backfill --source mt5` fetched the broker's own candles from 1 Jan 2024, the oldest the FundedNext server keeps, into `data/EURUSD_M5_mt5_history.csv`. HistData is now used only for 2023.
+- Hours HistData lacks are filled from Dukascopy's M1 candles (`forex_replay/dukascopy.py`), only where HistData has no bar in that hour. Dukascopy answers many requests with 503s, so about 50 short holes on some 20 days of 2023 are still open; running the fill again later closes them.

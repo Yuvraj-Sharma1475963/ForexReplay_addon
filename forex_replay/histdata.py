@@ -4,7 +4,8 @@ HistData's clock is New York standard time (UTC-5) moved with European daylight 
 with the broker's own candles over 2025 it lines up exactly once read that way (UTC = stamp + 5h,
 taken as London time), and its prices then sit within 0.2-0.3 pip of the broker's (its closes
 about 2 points lower). It has no volume and no spread: volume is 0 and the spread the broker's
-usual one, as for the Yahoo fill. The file it fills, data/EURUSD_M5_histdata.csv, loses every
+usual one, as for the Yahoo fill. HistData lacks whole hours on many days (most of Feb-Jul 2023):
+those are filled from Dukascopy (dukascopy.py). The file it fills, data/EURUSD_M5_histdata.csv, loses every
 overlap to the broker's exports (datapipe.find_exports).
 """
 from __future__ import annotations
@@ -19,7 +20,7 @@ from http.cookiejar import CookieJar
 
 import pandas as pd
 
-from .datapipe import utc_to_server
+from .datapipe import server_to_utc, utc_to_server
 
 PAGE = "https://www.histdata.com/download-free-forex-historical-data/?/ascii/1-minute-bar-quotes/{pair}/{period}"
 GET = "https://www.histdata.com/get.php"
@@ -75,9 +76,12 @@ def to_m5(m1: pd.DataFrame, spread: int = 0) -> pd.DataFrame:
 
 
 def fetch_histdata(start_server: pd.Timestamp, end_server: pd.Timestamp, symbol: str = "EURUSD", spread: int = 0,
-                   downloader=download, today: pd.Timestamp | None = None) -> tuple[pd.DataFrame, str]:
-    """M5 candles [start, end) on the server clock: a zip per year, per month for the current year."""
+                   downloader=download, today: pd.Timestamp | None = None, filler="dukascopy") -> tuple[pd.DataFrame, str]:
+    """M5 candles [start, end) on the server clock: a zip per year, per month for the current year. Hours
+    HistData lacks are filled from Dukascopy (`filler(symbol, utc_days)` -> M1 candles; None: left out)."""
     today = today or pd.Timestamp.now()
+    if filler == "dukascopy":
+        from .dukascopy import fetch_days as filler
     parts = []
     for year in range(start_server.year, end_server.year + 1):
         if year < today.year:
@@ -94,5 +98,32 @@ def fetch_histdata(start_server: pd.Timestamp, end_server: pd.Timestamp, symbol:
         return pd.DataFrame(columns=["open", "high", "low", "close", "volume", "spread"]), "HistData.com"
     m1 = pd.concat(parts).sort_index()
     m1 = m1[~m1.index.duplicated(keep="last")]
+    m1 = m1[(m1.index >= start_server) & (m1.index < end_server)]
+    holes = missing_hours(m1)
+    name = "HistData.com"
+    if holes and filler is not None:
+        extra = filler(symbol, holes)
+        if not extra.empty:
+            extra = extra[~extra.index.floor("h").isin(set(m1.index.floor("h")))]  # only hours HistData lacks
+            extra = extra[(extra.index >= start_server) & (extra.index < end_server)]
+            if not extra.empty:
+                m1 = pd.concat([m1, extra]).sort_index()
+                name = f"HistData.com + Dukascopy for {extra.index.floor('h').nunique()} missing hours"
     df = to_m5(m1, spread)
-    return df[(df.index >= start_server) & (df.index < end_server)], "HistData.com"
+    return df, name
+
+
+def missing_hours(m1: pd.DataFrame, shortest: pd.Timedelta = pd.Timedelta("30min"),
+                  longest: pd.Timedelta = pd.Timedelta("6h")) -> list[pd.Timestamp]:
+    """UTC days holding a hole in the M1 bars from `shortest` to `longest` long (longer ones are
+    weekends and holiday closes). HistData lacks whole hours on many days of Feb-Jul 2023."""
+    t = m1.index
+    if len(t) < 2:
+        return []
+    gap = pd.Series(t[1:] - t[:-1], index=t[:-1])
+    gap = gap[(gap > shortest) & (gap <= longest)]
+    days = set()
+    for start, length in gap.items():
+        a = server_to_utc(pd.DatetimeIndex([start, start + length]))
+        days.update(pd.date_range(a[0].normalize(), a[1].normalize(), freq="D").tz_localize(None))
+    return sorted(days)
